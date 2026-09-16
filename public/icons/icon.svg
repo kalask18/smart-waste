@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#022c22"/>
+    </linearGradient>
+    <linearGradient id="leafGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background Card -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+
+  <!-- Outer Ring Accent -->
+  <circle cx="256" cy="256" r="192" fill="none" stroke="#34d399" stroke-width="12" stroke-opacity="0.3" stroke-dasharray="24 16"/>
+
+  <!-- Smart Waste Bin Container -->
+  <path d="M176 192 L336 192 L320 384 C320 397.2 309.2 408 296 408 L216 408 C202.8 408 192 397.2 192 384 Z" fill="#0f172a" stroke="#34d399" stroke-width="12"/>
+
+  <!-- Bin Lid -->
+  <rect x="152" y="160" width="208" height="32" rx="10" fill="#10b981"/>
+  <path d="M224 160 L232 136 C234 130 240 124 248 124 L264 124 C272 124 278 130 280 136 L288 160 Z" fill="#34d399"/>
+
+  <!-- Smart Pulse Lines -->
+  <path d="M216 264 L240 264 L248 240 L260 288 L272 252 L280 264 L296 264" fill="none" stroke="#34d399" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Eco Leaf Badge Accent -->
+  <path d="M320 128 C320 128 360 136 368 176 C376 216 336 240 336 240 C336 240 328 192 320 128 Z" fill="url(#leafGrad)"/>
+</svg>
