@@ -106,10 +106,38 @@ export default function AdminRoutesPage() {
       if (cpData && cpData.length > 0) dbPoints = cpData as CollectionPoint[];
 
       const combined = dbPoints.length > 0 ? [...dbPoints, ...demoPointsAsCollectionPoints] : [...DEFAULT_POINTS, ...demoPointsAsCollectionPoints];
-      setCollectionPoints(combined);
 
       const mergedReports = await fetchMergedWasteReports();
       setWasteReports(mergedReports);
+
+      // Map active citizen reports into collection points for dynamic route generation
+      const existingCpNames = new Set(combined.map((p) => p.name.toLowerCase()));
+      const submittedReportPoints: CollectionPoint[] = mergedReports
+        .filter((r) => r.status === 'Submitted' || r.status === 'Under Review')
+        .map((r) => {
+          const fillPct = r.severity === 'CRITICAL' ? 95 : r.severity === 'HIGH' ? 88 : 75;
+          return {
+            id: `cp-rep-${r.id}`,
+            name: `${r.location_name} (${r.category})`,
+            latitude: r.latitude,
+            longitude: r.longitude,
+            capacity: 1000,
+            current_fill_percent: fillPct,
+            current_weight_kg: Math.round(fillPct * 4.5),
+            status: fillPct >= 85 ? 'overflowing' : 'active',
+            created_at: r.created_at,
+            is_demo: true,
+            ward: 'Citizen Reported Location',
+            sensitivity: 'residential',
+          } as CollectionPoint;
+        });
+
+      const newReportPointsToAppend = submittedReportPoints.filter(
+        (rp) => !existingCpNames.has(rp.name.toLowerCase())
+      );
+
+      const finalCollectionPoints = [...combined, ...newReportPointsToAppend];
+      setCollectionPoints(finalCollectionPoints);
     } catch (err) {
       console.error('Error fetching route data:', err);
     }

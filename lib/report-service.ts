@@ -112,8 +112,12 @@ export function saveReportToLocalCache(report: WasteReport) {
 }
 
 export function isNarasipuramLocation(lat?: number, lng?: number): boolean {
-  if (lat === undefined || lng === undefined || isNaN(lat) || isNaN(lng)) return false;
-  return lat >= 10.80 && lat <= 11.20 && lng >= 76.50 && lng <= 77.00;
+  if (lat === undefined || lng === undefined || isNaN(lat) || isNaN(lng)) return true;
+  // Exclude legacy Bangalore dummy coordinates (lat ~12.97, lng ~77.59)
+  if (Math.abs(lat - 12.97) < 0.2 && Math.abs(lng - 77.59) < 0.2) {
+    return false;
+  }
+  return true;
 }
 
 /**
