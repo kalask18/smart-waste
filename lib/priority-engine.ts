@@ -125,7 +125,7 @@ export function calculateSmartPriority(input: PriorityEngineInput): PriorityEngi
     
     // Overflow bin curve (when fill >= 85%, urgency accelerates)
     if (fillVal >= 85) {
-      rawFillScore = Math.min(100, 85 + (fillVal - 85) * 1.5);
+      rawFillScore = Math.min(100, 90 + (fillVal - 85) * 0.67);
     } else {
       rawFillScore = fillVal;
     }
@@ -199,7 +199,13 @@ export function calculateSmartPriority(input: PriorityEngineInput): PriorityEngi
 
   // 5b. OVERDUE COLLECTION FACTOR (+15 pts boost, max 100)
   const overdueBoost = input.is_overdue ? 15 : 0;
-  const rawFinalScore = isNaN(weightedSum) ? 30 : weightedSum + overdueBoost;
+  let rawFinalScore = isNaN(weightedSum) ? 30 : weightedSum + overdueBoost;
+
+  // 5c. 85%+ FILL LEVEL GUARANTEE: Must be at least HIGH (56+) or CRITICAL (76+)
+  if (input.fill_percentage !== undefined && input.fill_percentage !== null && input.fill_percentage >= 85) {
+    rawFinalScore = Math.max(76, rawFinalScore); // Guarantee CRITICAL level for 85%+ overflow
+  }
+
   const finalScore = Math.min(100, Math.max(0, Math.round(rawFinalScore)));
 
   // 6. MAP SCORE TO PRIORITY LEVEL

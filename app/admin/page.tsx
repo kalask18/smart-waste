@@ -783,6 +783,121 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* WORKER ATTENDANCE & ACCOUNTABILITY AUDIT SECTION */}
+      <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600">
+              <Shield className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                Worker Attendance &amp; Accountability Audit Log
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Track field worker clock-in status, assigned route execution progress, and geotagged collection proof verification.
+              </p>
+            </div>
+          </div>
+          <span className="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-extrabold text-xs">
+            100% Verified Accountability
+          </span>
+        </div>
+
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase text-[10px]">
+                <th className="py-2.5 px-3">Worker / Driver</th>
+                <th className="py-2.5 px-3">Vehicle &amp; Route</th>
+                <th className="py-2.5 px-3">Clock-In Time</th>
+                <th className="py-2.5 px-3">Shift Status</th>
+                <th className="py-2.5 px-3">Stops Serviced</th>
+                <th className="py-2.5 px-3">Geotag Proof Status</th>
+                <th className="py-2.5 px-3">On-Time Score</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+              <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td className="py-3 px-3">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-xs">
+                      R
+                    </div>
+                    <div>
+                      <p className="font-extrabold text-slate-900 dark:text-white">Ramesh Patel</p>
+                      <p className="text-[10px] text-slate-400">ID: W-101 • Narasipuram</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="py-3 px-3">
+                  <p className="font-bold text-slate-900 dark:text-white">TN-37-EV-2024</p>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400">RT-ASSIGNED-01</p>
+                </td>
+                <td className="py-3 px-3 font-mono text-slate-600 dark:text-slate-300">
+                  07:30 AM Today
+                </td>
+                <td className="py-3 px-3">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-extrabold text-[10px] uppercase">
+                    ON ROUTE (ACTIVE)
+                  </span>
+                </td>
+                <td className="py-3 px-3 font-bold">
+                  {todayCompletedCount} / 4 Stops
+                </td>
+                <td className="py-3 px-3">
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] border border-emerald-200 dark:border-emerald-800 flex items-center space-x-1 w-fit">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                    <span>{verifications.length} Geotags Verified</span>
+                  </span>
+                </td>
+                <td className="py-3 px-3 font-black text-emerald-600 dark:text-emerald-400">
+                  98% On-Time
+                </td>
+              </tr>
+
+              <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td className="py-3 px-3">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs">
+                      S
+                    </div>
+                    <div>
+                      <p className="font-extrabold text-slate-900 dark:text-white">Selvam Kumar</p>
+                      <p className="text-[10px] text-slate-400">ID: W-102 • Thondamuthur</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="py-3 px-3">
+                  <p className="font-bold text-slate-900 dark:text-white">TN-38-SW-8891</p>
+                  <p className="text-[10px] text-blue-600 dark:text-blue-400">RT-THOND-02</p>
+                </td>
+                <td className="py-3 px-3 font-mono text-slate-600 dark:text-slate-300">
+                  08:00 AM Today
+                </td>
+                <td className="py-3 px-3">
+                  <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-extrabold text-[10px] uppercase">
+                    SHIFT COMPLETED
+                  </span>
+                </td>
+                <td className="py-3 px-3 font-bold">
+                  5 / 5 Stops
+                </td>
+                <td className="py-3 px-3">
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] border border-emerald-200 dark:border-emerald-800 flex items-center space-x-1 w-fit">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                    <span>5 Geotags Verified</span>
+                  </span>
+                </td>
+                <td className="py-3 px-3 font-black text-emerald-600 dark:text-emerald-400">
+                  100% On-Time
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Map View */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">

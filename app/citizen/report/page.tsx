@@ -6,6 +6,7 @@ import { useAuth } from '@/context/auth-context';
 import { useLanguage } from '@/lib/i18n/context';
 import { supabase } from '@/lib/supabase/client';
 import LocationPicker from '@/components/location-picker';
+import { GeotagCamera, GeotagData } from '@/components/geotag-camera';
 import { calculateWastePriority } from '@/lib/priority-engine';
 import { addNotification } from '@/lib/notification-service';
 import { saveReportToLocalCache } from '@/lib/report-service';
@@ -403,51 +404,33 @@ export default function ReportWastePage() {
           />
         </div>
 
-        {/* Step 5: Photo Upload */}
+        {/* Step 5: Geotag Camera & Photo Proof */}
         <div className="space-y-2">
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            5. {t('citizenPhotoUrl')}
+            5. {t('citizenPhotoUrl')} (Geotagged Photo Verification)
           </label>
-          
-          <div className="space-y-3">
-            {!previewUrl ? (
-              <label className="w-full flex flex-col items-center justify-center p-5 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors">
-                <Upload className="w-6 h-6 text-emerald-600 dark:text-emerald-400 mb-1" />
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  {t('driverUploadProof')}
-                </span>
-                <span className="text-[10px] text-slate-400 mt-0.5">
-                  JPEG, PNG, WEBP up to 5MB
-                </span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-              </label>
-            ) : (
-              <div className="relative p-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-14 h-14 rounded-xl overflow-hidden border border-slate-300 shrink-0">
-                    <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">
-                      {selectedFile?.name || 'Uploaded Photo'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={removePhoto}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
+
+          <GeotagCamera
+            roleLabel="CITIZEN REPORT"
+            defaultLandmark={locationName}
+            defaultLat={latitude}
+            defaultLng={longitude}
+            onCapture={(gData: GeotagData) => {
+              setPreviewUrl(gData.dataUrl);
+              if (gData.file) setSelectedFile(gData.file);
+              if (gData.latitude && gData.longitude) {
+                setLatitude(gData.latitude);
+                setLongitude(gData.longitude);
+              }
+              if (gData.landmark) {
+                setLocationName(gData.landmark);
+              }
+            }}
+            onClear={() => {
+              setPreviewUrl(null);
+              setSelectedFile(null);
+            }}
+          />
         </div>
 
         {/* Priority Engine Preview */}
