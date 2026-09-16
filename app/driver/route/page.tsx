@@ -15,6 +15,7 @@ import {
 } from '@/lib/worker-service';
 import { completeDemoStop } from '@/lib/demo-simulation-service';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { GeotagCamera, GeotagData } from '@/components/geotag-camera';
 import { 
   AlertCircle,
   Truck, 
@@ -175,17 +176,21 @@ export default function DriverRoutePage() {
     }
   };
 
-  // Handle Image File Selection
-  const handlePhotoSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProofPhotoPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+  // Handle Geotag Camera Capture
+  const handleGeotagCapture = (data: GeotagData) => {
+    setProofPhotoPreview(data.dataUrl);
+    setVerificationLocation({ lat: data.latitude, lng: data.longitude });
+    setGpsVerified(data.isGpsVerified);
+    if (data.file) {
+      setSelectedFile(data.file);
     }
+  };
+
+  const handleGeotagClear = () => {
+    setProofPhotoPreview(null);
+    setSelectedFile(null);
+    setGpsVerified(false);
+    setVerificationLocation(null);
   };
 
   // Submit Final Verification & Complete Stop
@@ -659,48 +664,20 @@ export default function DriverRoutePage() {
               </button>
             </div>
 
-            {/* Verification Proof Photo */}
+            {/* Geotagged Proof Camera */}
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Proof Photo (Upload Collection Photo to Supabase)
+                Worker Geotagged Collection Proof
               </label>
-              
-              {proofPhotoPreview ? (
-                <div className="relative rounded-2xl overflow-hidden border border-emerald-500/50 max-h-48 bg-slate-950 flex items-center justify-center">
-                  <img src={proofPhotoPreview} alt="Verification Proof" className="max-h-48 object-cover w-full" />
-                  <button
-                    onClick={() => {
-                      setProofPhotoPreview(null);
-                      setSelectedFile(null);
-                    }}
-                    className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-900/80 text-white hover:bg-red-600 transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <label className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer bg-slate-50 dark:bg-slate-800/50 transition-colors">
-                  <Camera className="w-8 h-8 text-slate-400 mb-2" />
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Click to snap or upload verification photo</span>
-                  <span className="text-[10px] text-slate-400">PNG, JPG up to 5MB</span>
-                  <input type="file" accept="image/*" onChange={handlePhotoSelected} className="hidden" />
-                </label>
-              )}
-            </div>
-
-            {/* Verification GPS Location Status (Truthful badge) */}
-            <div className="p-3.5 rounded-xl border text-xs">
-              {gpsVerified && verificationLocation ? (
-                <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400 font-extrabold">
-                  <MapPin className="w-4 h-4 shrink-0" />
-                  <span>GPS Location Verified ({verificationLocation.lat.toFixed(5)}, {verificationLocation.lng.toFixed(5)})</span>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-2 text-amber-600 dark:text-amber-400 font-bold">
-                  <AlertTriangle className="w-4 h-4 shrink-0" />
-                  <span>{locationStatusText}</span>
-                </div>
-              )}
+              <GeotagCamera
+                roleLabel="WORKER COLLECTION PROOF"
+                defaultLandmark={selectedStopToCollect.location_name}
+                defaultLat={selectedStopToCollect.latitude}
+                defaultLng={selectedStopToCollect.longitude}
+                onCapture={handleGeotagCapture}
+                onClear={handleGeotagClear}
+                required={true}
+              />
             </div>
 
             {/* Optional Notes */}
