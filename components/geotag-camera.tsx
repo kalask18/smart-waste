@@ -96,27 +96,40 @@ export function GeotagCamera({
     );
   };
 
+  // Attach live video stream when video element mounts after state change
+  useEffect(() => {
+    if (isCameraActive && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch((err) => console.warn('Video element play notice:', err));
+    }
+  }, [isCameraActive]);
+
   const startCamera = async () => {
     setCameraError(null);
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error(isTamil ? 'உலாவியில் கேமரா வசதி இல்லை.' : 'Camera API is not supported in this browser.');
+      if (typeof window === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error(isTamil ? 'உலாவியில் கேமரா வசதி இல்லை.' : 'Camera API is not supported in this browser environment.');
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+      } catch (e) {
+        // Fallback for laptops/desktop webcams
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
 
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
       setIsCameraActive(true);
     } catch (err: any) {
       console.warn('Camera access notice:', err);
-      setCameraError(err.message || (isTamil ? 'கேமரா அனுமதி மறுக்கப்பட்டது.' : 'Camera access denied or unavailable. You can upload a photo or use demo proof.'));
+      setCameraError(err.message || (isTamil ? 'கேமரா அனுமதி மறுக்கப்பட்டது.' : 'Camera access denied or unavailable. You can upload a photo or generate demo proof.'));
       setIsCameraActive(false);
     }
   };
@@ -385,7 +398,7 @@ export function GeotagCamera({
         ) : isCameraActive ? (
           /* Live Camera Stream Viewfinder */
           <div className="relative rounded-2xl overflow-hidden bg-slate-950 border-2 border-emerald-500">
-            <video ref={videoRef} playsInline autoPlay className="w-full h-56 object-cover" />
+            <video ref={videoRef} playsInline autoPlay muted className="w-full h-56 object-cover" />
             
             {/* Viewfinder Overlay Frame */}
             <div className="absolute inset-0 border-2 border-dashed border-emerald-400/50 m-4 rounded-xl pointer-events-none flex items-center justify-center">
