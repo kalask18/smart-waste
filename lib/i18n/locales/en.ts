@@ -156,7 +156,7 @@ export const en = {
   adminDirectoryTitle: 'Collection Points Priority Directory (Sorted Highest Urgency First)',
 
   // AI Demand Forecast
-  aiForecastTitle: 'Phase 10 — AI Waste Demand Prediction & Recommendation',
+  aiForecastTitle: 'AI Waste Demand Prediction & Recommendation',
   aiForecastSub: 'Predictive algorithm analyzing fill rate speed, citizen complaint density, location sensitivity, and historical collection intervals.',
   aiRunForecast: 'Run AI Demand Prediction',
   aiPredicting: 'Analyzing Telemetry Data...',

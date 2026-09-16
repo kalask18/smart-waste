@@ -30,7 +30,9 @@ import {
   Bell,
   Check,
   Trash2,
-  AlertCircle
+  AlertCircle,
+  UserCheck,
+  ShieldCheck
 } from 'lucide-react';
 import { 
   getNotifications, 
@@ -40,6 +42,11 @@ import {
   checkAndCreateOverdueNotification,
   createMissedNotification
 } from '@/lib/notification-service';
+import { 
+  getWorkerAttendanceList, 
+  manualUpdateAttendanceStatus, 
+  WorkerAttendanceRecord 
+} from '@/lib/attendance-service';
 import { fetchMergedWasteReports, subscribeReportsChange } from '@/lib/report-service';
 import { Notification } from '@/types/database';
 
@@ -148,10 +155,15 @@ export default function AdminDashboard() {
   const [selectedProofModal, setSelectedProofModal] = useState<VerificationEvidenceItem | null>(null);
   const [selectedMissedModal, setSelectedMissedModal] = useState<OverdueTaskItem | null>(null);
   const [missedReasonInput, setMissedReasonInput] = useState<string>('');
+  const [attendanceList, setAttendanceList] = useState<WorkerAttendanceRecord[]>([]);
+  const [selectedAttendanceModal, setSelectedAttendanceModal] = useState<WorkerAttendanceRecord | null>(null);
 
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
+      // Load current worker attendance records
+      const attData = getWorkerAttendanceList();
+      setAttendanceList(attData);
       // Load current demo simulation state
       const demoState = getDemoState();
       const demoPointsAsCollectionPoints: CollectionPoint[] = demoState.points.map((dp) => ({
@@ -464,15 +476,30 @@ export default function AdminDashboard() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={fetchDashboardData}
             disabled={loading}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 flex items-center space-x-1.5"
+            className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 flex items-center space-x-1.5"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>{t('actionRefresh')}</span>
           </button>
+          
+          <button
+            onClick={() => {
+              const el = document.getElementById('worker-attendance-section');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="inline-flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow-lg shadow-indigo-600/20 transition-all cursor-pointer"
+          >
+            <ShieldCheck className="w-4 h-4 text-indigo-200" />
+            <span>Worker Attendance</span>
+            <span className="px-2 py-0.5 rounded-full bg-indigo-500 text-white text-[10px] font-black">
+              {attendanceList.filter(a => a.attendance_status === 'PRESENT_VERIFIED' || a.attendance_status === 'ON_DUTY').length} Verified
+            </span>
+          </button>
+
           <Link
             href="/admin/routes"
             className="inline-flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all"
@@ -784,24 +811,27 @@ export default function AdminDashboard() {
       )}
 
       {/* WORKER ATTENDANCE & ACCOUNTABILITY AUDIT SECTION */}
-      <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-4">
+      <div id="worker-attendance-section" className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div className="flex items-center space-x-2.5">
             <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600">
-              <Shield className="w-5 h-5" />
+              <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                 Worker Attendance &amp; Accountability Audit Log
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Track field worker clock-in status, assigned route execution progress, and geotagged collection proof verification.
+                Automated worker attendance tracking — attendance is automatically updated &amp; verified when worker confirms collected waste with geotag proof.
               </p>
             </div>
           </div>
-          <span className="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-extrabold text-xs">
-            100% Verified Accountability
-          </span>
+          <div className="flex items-center space-x-2">
+            <span className="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-extrabold text-xs flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+              Auto-Attendance System Active
+            </span>
+          </div>
         </div>
 
         <div className="overflow-x-auto custom-scrollbar">
@@ -810,89 +840,87 @@ export default function AdminDashboard() {
               <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase text-[10px]">
                 <th className="py-2.5 px-3">Worker / Driver</th>
                 <th className="py-2.5 px-3">Vehicle &amp; Route</th>
-                <th className="py-2.5 px-3">Clock-In Time</th>
-                <th className="py-2.5 px-3">Shift Status</th>
-                <th className="py-2.5 px-3">Stops Serviced</th>
+                <th className="py-2.5 px-3">Attendance Status</th>
+                <th className="py-2.5 px-3">Clock-In Punch Time</th>
+                <th className="py-2.5 px-3">Collections Serviced</th>
                 <th className="py-2.5 px-3">Geotag Proof Status</th>
-                <th className="py-2.5 px-3">On-Time Score</th>
+                <th className="py-2.5 px-3">Attendance Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-              <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                <td className="py-3 px-3">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-xs">
-                      R
-                    </div>
-                    <div>
-                      <p className="font-extrabold text-slate-900 dark:text-white">Ramesh Patel</p>
-                      <p className="text-[10px] text-slate-400">ID: W-101 • Narasipuram</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-3 px-3">
-                  <p className="font-bold text-slate-900 dark:text-white">TN-37-EV-2024</p>
-                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400">RT-ASSIGNED-01</p>
-                </td>
-                <td className="py-3 px-3 font-mono text-slate-600 dark:text-slate-300">
-                  07:30 AM Today
-                </td>
-                <td className="py-3 px-3">
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-extrabold text-[10px] uppercase">
-                    ON ROUTE (ACTIVE)
-                  </span>
-                </td>
-                <td className="py-3 px-3 font-bold">
-                  {todayCompletedCount} / 4 Stops
-                </td>
-                <td className="py-3 px-3">
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] border border-emerald-200 dark:border-emerald-800 flex items-center space-x-1 w-fit">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                    <span>{verifications.length} Geotags Verified</span>
-                  </span>
-                </td>
-                <td className="py-3 px-3 font-black text-emerald-600 dark:text-emerald-400">
-                  98% On-Time
-                </td>
-              </tr>
+              {attendanceList.map((att) => {
+                const isRamesh = att.vehicle_number === 'TN-37-EV-2024';
+                const collectionsCount = isRamesh ? Math.max(att.verified_collections_count, todayCompletedCount) : att.verified_collections_count;
+                const isPresent = att.attendance_status === 'PRESENT_VERIFIED' || collectionsCount > 0;
 
-              <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                <td className="py-3 px-3">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs">
-                      S
-                    </div>
-                    <div>
-                      <p className="font-extrabold text-slate-900 dark:text-white">Selvam Kumar</p>
-                      <p className="text-[10px] text-slate-400">ID: W-102 • Thondamuthur</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-3 px-3">
-                  <p className="font-bold text-slate-900 dark:text-white">TN-38-SW-8891</p>
-                  <p className="text-[10px] text-blue-600 dark:text-blue-400">RT-THOND-02</p>
-                </td>
-                <td className="py-3 px-3 font-mono text-slate-600 dark:text-slate-300">
-                  08:00 AM Today
-                </td>
-                <td className="py-3 px-3">
-                  <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-extrabold text-[10px] uppercase">
-                    SHIFT COMPLETED
-                  </span>
-                </td>
-                <td className="py-3 px-3 font-bold">
-                  5 / 5 Stops
-                </td>
-                <td className="py-3 px-3">
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] border border-emerald-200 dark:border-emerald-800 flex items-center space-x-1 w-fit">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                    <span>5 Geotags Verified</span>
-                  </span>
-                </td>
-                <td className="py-3 px-3 font-black text-emerald-600 dark:text-emerald-400">
-                  100% On-Time
-                </td>
-              </tr>
+                return (
+                  <tr key={att.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <td className="py-3 px-3">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-xs">
+                          {att.worker_name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="font-extrabold text-slate-900 dark:text-white">{att.worker_name}</p>
+                          <p className="text-[10px] text-slate-400">ID: {att.worker_id.substring(0, 8)} • Operational Zone</p>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="py-3 px-3">
+                      <p className="font-bold text-slate-900 dark:text-white">{att.vehicle_number}</p>
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400">{att.route_code}</p>
+                    </td>
+
+                    {/* Dedicated Attendance Status Column */}
+                    <td className="py-3 px-3">
+                      {isPresent ? (
+                        <div className="space-y-0.5">
+                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-extrabold text-[10px] uppercase inline-flex items-center gap-1 border border-emerald-300 dark:border-emerald-800">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                            PRESENT / VERIFIED
+                          </span>
+                          <p className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold">⚡ Auto-updated via Collection</p>
+                        </div>
+                      ) : att.attendance_status === 'ON_DUTY' ? (
+                        <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-extrabold text-[10px] uppercase border border-blue-300 dark:border-blue-800">
+                          ON DUTY (SHIFT ACTIVE)
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-extrabold text-[10px] uppercase border border-slate-200 dark:border-slate-700">
+                          OFF DUTY
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="py-3 px-3 font-mono text-slate-600 dark:text-slate-300 text-[11px]">
+                      {new Date(att.clock_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} Today
+                    </td>
+
+                    <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">
+                      {collectionsCount} / {att.total_assigned_stops} Stops Verified
+                    </td>
+
+                    <td className="py-3 px-3">
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] border border-emerald-200 dark:border-emerald-800 flex items-center space-x-1 w-fit">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                        <span>{collectionsCount} Geotags Burned</span>
+                      </span>
+                    </td>
+
+                    {/* Dedicated Attendance Action Button */}
+                    <td className="py-3 px-3">
+                      <button
+                        onClick={() => setSelectedAttendanceModal(att)}
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-700 dark:text-slate-300 font-extrabold text-[11px] transition-colors border border-slate-200 dark:border-slate-700 flex items-center space-x-1"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>Manage Attendance</span>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1009,6 +1037,103 @@ export default function AdminDashboard() {
                 Mark as MISSED
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Worker Attendance Detail & Override Modal */}
+      {selectedAttendanceModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full space-y-5 shadow-2xl">
+            
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
+                    WORKER ATTENDANCE CARD
+                  </h3>
+                  <p className="text-xs text-slate-500">{selectedAttendanceModal.worker_name} • {selectedAttendanceModal.vehicle_number}</p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedAttendanceModal(null)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"><X className="w-5 h-5" /></button>
+            </div>
+
+            {/* Attendance Status Badge */}
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500 uppercase">Attendance System Status</span>
+                <span className="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-black text-xs border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                  PRESENT / VERIFIED
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block">CLOCK-IN PUNCH TIME</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">
+                    {new Date(selectedAttendanceModal.clock_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block">COLLECTIONS VERIFIED</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                    {selectedAttendanceModal.verified_collections_count} / {selectedAttendanceModal.total_assigned_stops} Stops
+                  </span>
+                </div>
+              </div>
+
+              {selectedAttendanceModal.notes && (
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 italic border-t border-slate-200 dark:border-slate-700 pt-2">
+                  "{selectedAttendanceModal.notes}"
+                </p>
+              )}
+            </div>
+
+            {/* Manual Admin Override Buttons */}
+            <div className="space-y-2 pt-1">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Admin Attendance Override Actions:
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => {
+                    const updated = manualUpdateAttendanceStatus(selectedAttendanceModal.worker_id, 'PRESENT_VERIFIED');
+                    setAttendanceList(updated);
+                    setSelectedAttendanceModal(null);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md flex items-center space-x-1"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Mark Present &amp; Verified</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const updated = manualUpdateAttendanceStatus(selectedAttendanceModal.worker_id, 'OFF_DUTY');
+                    setAttendanceList(updated);
+                    setSelectedAttendanceModal(null);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-rose-600 hover:text-white font-bold text-xs transition-colors"
+                >
+                  Mark Off Duty
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-slate-100 dark:border-slate-800 pt-3">
+              <button
+                onClick={() => setSelectedAttendanceModal(null)}
+                className="px-5 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs"
+              >
+                Done
+              </button>
+            </div>
+
           </div>
         </div>
       )}

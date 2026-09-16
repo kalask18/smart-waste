@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client';
+import { recordWorkerCollectionAttendance } from '@/lib/attendance-service';
 
 export interface DriverRouteData {
   route_id: string;
@@ -344,6 +345,15 @@ export async function updateWorkerStopStatus(
           status: 'active',
         })
         .eq('id', targetStop.collection_point_id);
+
+      // 4. Automatically update Worker Attendance Record
+      await recordWorkerCollectionAttendance({
+        workerId: workerId,
+        workerName: routeData.driver_name,
+        vehicleNumber: routeData.vehicle_number,
+        routeCode: routeData.route_code,
+        geotagUrl: finalPhotoUrl,
+      });
     }
 
     // 4. Update routes table status
