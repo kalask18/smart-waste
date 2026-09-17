@@ -43,21 +43,31 @@ export default function ReportMissedCollectionPage() {
 
     setIsSubmitting(true);
     try {
+      let validCpId: string | null = null;
+      if (collectionPointId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(collectionPointId)) {
+        validCpId = collectionPointId;
+      }
+
+      let validUserId: string | null = null;
+      if (user?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id)) {
+        validUserId = user.id;
+      }
+
       const point = collectionPoints.find(p => p.id === collectionPointId);
+      const locName = point?.name || 'Missed Collection Spot';
+      const fullDesc = `${locName}: MISSED COLLECTION ALERT (Scheduled: ${scheduledDate}) - ${description || 'Scheduled waste pickup was missed by driver.'}`;
 
       const { error } = await supabase
         .from('waste_reports')
         .insert({
-          user_id: user?.id || null,
-          collection_point_id: collectionPointId,
-          location_name: point?.name || 'Missed Collection Point',
+          user_id: validUserId,
+          collection_point_id: validCpId,
           category: 'overflowing_bin',
           severity: 'HIGH',
-          description: `MISSED COLLECTION ALERT (Scheduled: ${scheduledDate}): ${description || 'Scheduled waste pickup was missed by driver.'}`,
+          description: fullDesc,
           latitude: point?.latitude || 11.0003,
           longitude: point?.longitude || 76.7725,
-          status: 'Submitted',
-          priority_score: 85,
+          status: 'pending',
         });
 
       if (error) throw error;

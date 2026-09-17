@@ -83,12 +83,12 @@ export function Header({ onToggleSidebar }: HeaderProps) {
             </button>
           )}
 
-          <div className="flex items-center space-x-2 text-xs font-medium">
-            <span className="text-slate-400 capitalize hidden sm:inline-block">
+          <div className="flex items-center space-x-2 text-xs font-medium min-w-0">
+            <span className="text-slate-400 capitalize hidden sm:inline-block shrink-0">
               {currentRoleLabel}
             </span>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-400 hidden sm:inline-block" />
-            <span className="font-extrabold text-slate-900 dark:text-white text-sm tracking-tight">
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400 hidden sm:inline-block shrink-0" />
+            <span className="font-extrabold text-slate-900 dark:text-white text-xs sm:text-sm tracking-tight truncate">
               {getBreadcrumb()}
             </span>
           </div>
@@ -157,10 +157,10 @@ export function Header({ onToggleSidebar }: HeaderProps) {
             <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
           </button>
 
-          {/* User Profile Badge */}
+          {/* User Profile Badge (Hidden on mobile, placed in Sidebar for clean responsive design) */}
           {!loading && (
             user ? (
-              <div className="flex items-center space-x-2 pl-2 border-l border-slate-200 dark:border-slate-800">
+              <div className="hidden lg:flex items-center space-x-2 pl-2 border-l border-slate-200 dark:border-slate-800">
                 <div className="w-8 h-8 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shadow-sm">
                   {(profile?.full_name || user.email || 'U').charAt(0).toUpperCase()}
                 </div>
@@ -183,7 +183,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
             ) : (
               <Link
                 href="/login"
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition-colors"
+                className="hidden lg:inline-flex px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition-colors"
               >
                 {t('actionLogIn')}
               </Link>

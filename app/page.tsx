@@ -18,8 +18,11 @@ import {
   LayoutDashboard
 } from 'lucide-react';
 
+import { useLanguage } from '@/lib/i18n/context';
+
 export default function Home() {
   const { user, role } = useAuth();
+  const { t } = useLanguage();
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-white">
@@ -42,23 +45,13 @@ export default function Home() {
         </Link>
 
         <div className="flex items-center space-x-2">
-          {user ? (
-            <Link
-              href={role === 'admin' ? '/admin' : role === 'driver' ? '/driver' : '/citizen'}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-colors flex items-center space-x-1.5"
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              <span>Go to My Dashboard ({role || 'Citizen'})</span>
-            </Link>
-          ) : (
-            <Link
-              href="/login"
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-colors flex items-center space-x-1.5"
-            >
-              <LogIn className="w-4 h-4" />
-              <span>Log In / Register</span>
-            </Link>
-          )}
+          <Link
+            href="/login"
+            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-colors flex items-center space-x-1.5"
+          >
+            <LogIn className="w-4 h-4" />
+            <span>{t('actionLogIn')}</span>
+          </Link>
         </div>
       </header>
 

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import { WasteReport } from '@/types/database';
 import { INITIAL_REPORTS } from '@/lib/demo-data';
+import { fetchMergedWasteReports, parseDbReport } from '@/lib/report-service';
 import { ArrowLeft, Clock, MapPin, CheckCircle2, Shield, Truck, AlertCircle, FileImage, Sparkles } from 'lucide-react';
 
 export default function ReportDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -20,23 +21,28 @@ export default function ReportDetailsPage({ params }: { params: Promise<{ id: st
     const fetchDetails = async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('waste_reports')
-          .select('*')
-          .eq('id', reportId)
-          .single();
-
-        if (!error && data) {
-          setReport(data as WasteReport);
+        const merged = await fetchMergedWasteReports();
+        const found = merged.find((r) => r.id === reportId || r.id.toLowerCase() === reportId.toLowerCase());
+        if (found) {
+          setReport(found);
         } else {
-          // Fallback to demo item matching ID or first report
-          const demoItem = INITIAL_REPORTS.find(r => r.id === reportId) || INITIAL_REPORTS[0];
-          setReport(demoItem as any);
+          const { data, error } = await supabase
+            .from('waste_reports')
+            .select('*')
+            .eq('id', reportId)
+            .maybeSingle();
+
+          if (!error && data) {
+            setReport(parseDbReport(data));
+          } else {
+            const demoItem = INITIAL_REPORTS.find((r) => r.id === reportId) || INITIAL_REPORTS[0];
+            setReport(parseDbReport(demoItem));
+          }
         }
       } catch (err) {
         console.error('Error fetching report details:', err);
-        const demoItem = INITIAL_REPORTS.find(r => r.id === reportId) || INITIAL_REPORTS[0];
-        setReport(demoItem as any);
+        const demoItem = INITIAL_REPORTS.find((r) => r.id === reportId) || INITIAL_REPORTS[0];
+        setReport(parseDbReport(demoItem));
       } finally {
         setLoading(false);
       }

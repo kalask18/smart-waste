@@ -1,5 +1,8 @@
 import { supabase } from '@/lib/supabase/client';
 import { recordWorkerCollectionAttendance } from '@/lib/attendance-service';
+import { fetchOSRMRoute } from '@/lib/osrm-service';
+import { fetchMergedWasteReports } from '@/lib/report-service';
+import { generateSmartCollectionRoute } from '@/lib/route-generator';
 
 export interface DriverRouteData {
   route_id: string;
@@ -84,17 +87,20 @@ export async function uploadVerificationPhoto(file: File): Promise<string> {
 }
 
 /**
- * Fetches the assigned route for a worker/driver directly from Supabase.
+ * Fetches the assigned route for a worker/driver directly from Supabase or real-time database generator.
+ * Automatically computes OSRM driving geometry.
  */
 export async function fetchWorkerAssignedRoute(driverId: string, preferredVehicle?: string): Promise<DriverRouteData | null> {
+  const cleanPrefVehicle = (preferredVehicle || 'TN-37-EV-2024').split(' ')[0];
+
   try {
     let routeQuery = supabase
       .from('routes')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (preferredVehicle) {
-      routeQuery = routeQuery.eq('vehicle_number', preferredVehicle);
+    if (cleanPrefVehicle) {
+      routeQuery = routeQuery.ilike('vehicle_number', `%${cleanPrefVehicle}%`);
     }
 
     const { data: routeRows, error: routeErr } = await routeQuery.limit(1);
@@ -114,12 +120,12 @@ export async function fetchWorkerAssignedRoute(driverId: string, preferredVehicl
             const lng = s.longitude || 76.7725;
             return lat >= 10.80 && lat <= 11.20 && lng >= 76.50 && lng <= 77.00;
           })
-          .map((s: any) => ({
+          .map((s: any, idx: number) => ({
             id: s.id,
             route_id: s.route_id,
             collection_point_id: s.collection_point_id,
             report_id: s.report_id,
-            sequence_number: s.sequence_number,
+            sequence_number: idx + 1,
             location_name: s.location_name || 'Collection Stop',
             latitude: s.latitude || 11.0003,
             longitude: s.longitude || 76.7725,
@@ -140,10 +146,24 @@ export async function fetchWorkerAssignedRoute(driverId: string, preferredVehicl
 
         const completedCount = stopsList.filter((s) => s.status === 'collected').length;
 
-        return {
+        // Fetch OSRM driving geometry if missing
+        let osrmCoords = routeRow.geometry_coordinates;
+        let isFb = routeRow.is_fallback || false;
+
+        if (!osrmCoords || osrmCoords.length < 2) {
+          const waypoints: Array<[number, number]> = [
+            [11.0003, 76.7725],
+            ...stopsList.map((s) => [s.latitude, s.longitude] as [number, number]),
+          ];
+          const osrmRes = await fetchOSRMRoute(waypoints);
+          osrmCoords = osrmRes.geometryCoordinates;
+          isFb = osrmRes.isFallback;
+        }
+
+        const routeDataObj: DriverRouteData = {
           route_id: routeRow.id,
           route_code: routeRow.route_code || 'RT-ASSIGNED-01',
-          vehicle_number: routeRow.vehicle_number || preferredVehicle || 'TN-37-EV-2024',
+          vehicle_number: routeRow.vehicle_number || cleanPrefVehicle,
           vehicle_type: 'Electric Tipper E-Rickshaw',
           vehicle_capacity_kg: routeRow.vehicle_capacity_kg || 2000,
           driver_name: routeRow.driver_name || 'Ramesh Patel',
@@ -155,31 +175,74 @@ export async function fetchWorkerAssignedRoute(driverId: string, preferredVehicl
           remaining_stops: stopsList.length - completedCount,
           total_distance_km: routeRow.total_distance_km || 18.4,
           estimated_duration_minutes: routeRow.estimated_duration_minutes || 52,
-          is_fallback: routeRow.is_fallback || false,
+          is_fallback: isFb,
+          geometry_coordinates: osrmCoords,
           stops: stopsList,
         };
+
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY_SAVED_ROUTE, JSON.stringify(routeDataObj));
+        }
+
+        return routeDataObj;
       }
     }
 
+    // Dynamic Fallback: Generate real-time route directly from current Supabase reports & collection points
+    const mergedReports = await fetchMergedWasteReports();
+    let dbPoints: any[] = [];
+    const { data: cpData } = await supabase.from('collection_points').select('*');
+    if (cpData && cpData.length > 0) dbPoints = cpData;
+
+    const generated = await generateSmartCollectionRoute({
+      vehicle_lat: 11.0003,
+      vehicle_lng: 76.7725,
+      vehicle_capacity_kg: 2000,
+      collectionPoints: dbPoints,
+      wasteReports: mergedReports,
+      driver_name: 'Ramesh Patel',
+      vehicle_number: cleanPrefVehicle,
+    });
+
+    const driverData: DriverRouteData = {
+      route_id: generated.id,
+      route_code: generated.route_code,
+      vehicle_number: cleanPrefVehicle,
+      vehicle_type: 'Electric Tipper E-Rickshaw',
+      vehicle_capacity_kg: generated.vehicle_capacity_kg,
+      driver_name: generated.assigned_driver,
+      driver_id: driverId,
+      route_date: generated.route_date,
+      route_status: 'assigned',
+      total_stops: generated.total_stops,
+      completed_stops: 0,
+      remaining_stops: generated.total_stops,
+      total_distance_km: generated.total_distance_km,
+      estimated_duration_minutes: generated.estimated_duration_minutes,
+      is_fallback: generated.is_fallback,
+      geometry_coordinates: generated.geometry_coordinates,
+      stops: generated.stops.map((s, idx) => ({
+        id: s.id || `stop-${idx + 1}`,
+        route_id: generated.id,
+        collection_point_id: s.collection_point_id,
+        report_id: s.report_id,
+        sequence_number: idx + 1,
+        location_name: s.location_name,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        fill_percentage: s.fill_percent || 85,
+        estimated_weight_kg: s.estimated_weight_kg || 250,
+        priority_level: s.priority_level,
+        priority_score: s.priority_score,
+        status: 'pending',
+      })),
+    };
+
     if (typeof window !== 'undefined') {
-      const storedStr = localStorage.getItem(STORAGE_KEY_SAVED_ROUTE);
-      if (storedStr) {
-        try {
-          const parsed = JSON.parse(storedStr) as DriverRouteData;
-          parsed.stops = (parsed.stops || []).filter((s) => {
-            const lat = s.latitude || 11.0003;
-            const lng = s.longitude || 76.7725;
-            return lat >= 10.80 && lat <= 11.20 && lng >= 76.50 && lng <= 77.00;
-          });
-          const completedCount = parsed.stops.filter((s) => s.status === 'collected').length;
-          parsed.completed_stops = completedCount;
-          parsed.remaining_stops = parsed.stops.length - completedCount;
-          return parsed;
-        } catch (e) {
-          console.warn('Failed parsing stored route:', e);
-        }
-      }
+      localStorage.setItem(STORAGE_KEY_SAVED_ROUTE, JSON.stringify(driverData));
     }
+
+    return driverData;
   } catch (err) {
     console.warn('Error fetching worker assigned route from Supabase:', err);
   }
@@ -346,7 +409,40 @@ export async function updateWorkerStopStatus(
         })
         .eq('id', targetStop.collection_point_id);
 
-      // 4. Automatically update Worker Attendance Record
+      // 4. Update matching waste_reports to Resolved in Supabase
+      if (targetStop.report_id) {
+        await supabase
+          .from('waste_reports')
+          .update({ status: 'Resolved' })
+          .eq('id', targetStop.report_id);
+      } else if (targetStop.collection_point_id) {
+        await supabase
+          .from('waste_reports')
+          .update({ status: 'Resolved' })
+          .eq('collection_point_id', targetStop.collection_point_id);
+      }
+
+      // Update local storage cached reports & dispatch change event
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('smartwaste_cached_reports');
+          if (raw) {
+            const reports = JSON.parse(raw);
+            const updatedReports = reports.map((r: any) => {
+              if (r.id === targetStop.report_id || r.collection_point_id === targetStop.collection_point_id) {
+                return { ...r, status: 'Resolved' };
+              }
+              return r;
+            });
+            localStorage.setItem('smartwaste_cached_reports', JSON.stringify(updatedReports));
+          }
+          window.dispatchEvent(new CustomEvent('smartwaste_reports_change'));
+        } catch (e) {
+          console.warn('Error updating cached reports:', e);
+        }
+      }
+
+      // 5. Automatically update Worker Attendance Record
       await recordWorkerCollectionAttendance({
         workerId: workerId,
         workerName: routeData.driver_name,
@@ -356,7 +452,7 @@ export async function updateWorkerStopStatus(
       });
     }
 
-    // 4. Update routes table status
+    // 6. Update routes table status
     if (routeData.route_id) {
       await supabase
         .from('routes')

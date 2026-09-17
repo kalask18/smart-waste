@@ -132,7 +132,7 @@ export default function ReportWastePage() {
     }
 
     setIsSubmitting(true);
-    let uploadedImageUrl = 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&q=80&w=800';
+    let uploadedImageUrl = previewUrl || 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&q=80&w=800';
 
     try {
       if (selectedFile) {
@@ -176,11 +176,11 @@ export default function ReportWastePage() {
       const insertPayload = {
         user_id: validUserId,
         collection_point_id: validCpId,
-        category,
-        severity,
+        category: category || 'general',
+        severity: severity || 'MEDIUM',
         description: fullDescription,
-        latitude,
-        longitude,
+        latitude: Number(latitude) || 11.0003,
+        longitude: Number(longitude) || 76.7725,
         image_url: uploadedImageUrl,
         status: 'pending',
       };

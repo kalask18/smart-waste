@@ -38,17 +38,20 @@ export function parseDbReport(item: any): WasteReport {
   let locationName = item.location_name || item.location;
   let description = item.description || '';
 
+  if (description.includes(': ')) {
+    const parts = description.split(': ');
+    const prefixLocation = parts[0].trim();
+    if (!locationName || locationName === 'Report Location' || locationName === 'Narasipuram Main Road' || locationName === 'Narasipuram Waste Point') {
+      locationName = prefixLocation;
+      description = parts.slice(1).join(': ').trim();
+    }
+  }
+
   if (!locationName && item.collection_point_id && CP_LOCATION_MAP[item.collection_point_id]) {
     locationName = CP_LOCATION_MAP[item.collection_point_id];
   }
 
-  if (!locationName && description.includes(': ')) {
-    const parts = description.split(': ');
-    locationName = parts[0];
-    description = parts.slice(1).join(': ');
-  }
-
-  if (!locationName) {
+  if (!locationName || locationName === 'Report Location') {
     if (description.toLowerCase().includes('narasipuram')) locationName = 'Narasipuram Main Road';
     else if (description.toLowerCase().includes('vellaimalaipattinam')) locationName = 'Vellaimalaipattinam Area';
     else if (description.toLowerCase().includes('devarayapuram')) locationName = 'Devarayapuram Market';
@@ -121,11 +124,12 @@ export function isNarasipuramLocation(lat?: number, lng?: number): boolean {
 }
 
 /**
- * Fetches reports from Supabase DB, merged with local cache and initial demo reports.
- * Excludes legacy Bangalore coordinates (outside Narasipuram demo bounding box).
+ * Fetches reports from Supabase DB, falling back to local cache/demo data only when offline.
+ * Supabase DB is the authoritative source of truth when connected.
  */
 export async function fetchMergedWasteReports(): Promise<WasteReport[]> {
   let dbReports: WasteReport[] = [];
+  let dbQueriedSuccessfully = false;
 
   try {
     const { data, error } = await supabase
@@ -133,27 +137,37 @@ export async function fetchMergedWasteReports(): Promise<WasteReport[]> {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
+    if (!error && data !== null) {
       dbReports = data.map(parseDbReport).filter((r) => isNarasipuramLocation(r.latitude, r.longitude));
+      dbQueriedSuccessfully = true;
     }
   } catch (err) {
     console.warn('Notice querying waste_reports from Supabase:', err);
   }
 
-  const localReports = getLocalReports().filter((r) => isNarasipuramLocation(r.latitude, r.longitude));
-  const demoReports = (INITIAL_REPORTS as any[]).map(parseDbReport).filter((r) => isNarasipuramLocation(r.latitude, r.longitude));
+  if (dbQueriedSuccessfully) {
+    // Preserve local offline-pending reports (e.g. rep- prefixed temporary local IDs created while offline)
+    const localReports = getLocalReports().filter((r) => isNarasipuramLocation(r.latitude, r.longitude));
+    const dbIds = new Set(dbReports.map((r) => r.id));
+    const offlinePendingReports = localReports.filter((r) => String(r.id).startsWith('rep-') && !dbIds.has(r.id));
+    const finalReports = [...dbReports, ...offlinePendingReports];
 
-  const seenIds = new Set<string>();
-  const merged: WasteReport[] = [];
-
-  for (const r of [...dbReports, ...localReports, ...demoReports]) {
-    if (!seenIds.has(r.id)) {
-      seenIds.add(r.id);
-      merged.push(r);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(REPORTS_CACHE_KEY, JSON.stringify(finalReports));
+      } catch (e) {
+        console.warn('Error updating reports cache from DB:', e);
+      }
     }
+    return finalReports;
   }
 
-  return merged;
+  const localReports = getLocalReports().filter((r) => isNarasipuramLocation(r.latitude, r.longitude));
+  if (localReports.length > 0) {
+    return localReports;
+  }
+
+  return INITIAL_REPORTS as unknown as WasteReport[];
 }
 
 /**

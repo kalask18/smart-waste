@@ -55,7 +55,7 @@ export function DataTable<T extends Record<string, any>>({
     <div className={`space-y-4 ${className}`}>
       {/* Search Header Bar */}
       {searchKey && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="relative w-full max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input

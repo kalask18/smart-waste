@@ -50,14 +50,7 @@ import {
 import { fetchMergedWasteReports, subscribeReportsChange } from '@/lib/report-service';
 import { Notification } from '@/types/database';
 
-const AdminMap = dynamic(() => import('@/components/admin-map'), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-[400px] rounded-3xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-xs text-slate-400 font-mono">
-      Loading OpenStreetMap Leaflet Layers...
-    </div>
-  ),
-});
+import AdminMap from '@/components/admin-map';
 
 const INITIAL_POINTS: CollectionPoint[] = [
   {

@@ -9,8 +9,10 @@ import { fetchMergedWasteReports, subscribeReportsChange } from '@/lib/report-se
 import { DataTable, Column } from '@/components/ui/data-table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { FileText, User, MapPin, Truck, Check, Eye, Radio, RefreshCw, X, ExternalLink } from 'lucide-react';
+import { useLanguage } from '@/lib/i18n/context';
 
 export default function AdminReportsPage() {
+  const { t, tLocation } = useLanguage();
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isRealtimeActive, setIsRealtimeActive] = useState<boolean>(true);
@@ -132,7 +134,7 @@ export default function AdminReportsPage() {
 
   const columns: Column<any>[] = [
     {
-      header: 'Report ID',
+      header: t('reportIdHeader'),
       accessor: (row) => (
         <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
           {row.report_code || `WR-${row.id.slice(0, 6).toUpperCase()}`}
@@ -140,7 +142,7 @@ export default function AdminReportsPage() {
       ),
     },
     {
-      header: 'Location & Photo',
+      header: t('reportLocationPhoto'),
       accessor: (row) => {
         const photoUrl = row.photo_url || row.image_url;
         return (
@@ -159,7 +161,7 @@ export default function AdminReportsPage() {
             )}
             <div>
               <p className="font-bold text-slate-900 dark:text-white text-xs line-clamp-1">
-                {row.location_name || row.location || 'Report Location'}
+                {tLocation(row.location_name || row.location || 'Report Location')}
               </p>
               <p className="text-[10px] text-slate-400 line-clamp-1">
                 {row.description || 'No description provided'}
@@ -170,7 +172,7 @@ export default function AdminReportsPage() {
       },
     },
     {
-      header: 'Category',
+      header: t('reportCategoryHeader'),
       accessor: (row) => (
         <span className="capitalize text-xs font-semibold text-slate-700 dark:text-slate-300">
           {(row.category || row.waste_category || 'general').replace('_', ' ')}
@@ -178,7 +180,23 @@ export default function AdminReportsPage() {
       ),
     },
     {
-      header: 'Priority Score',
+      header: t('reportSubmittedTimeHeader'),
+      accessor: (row) => {
+        const d = row.created_at ? new Date(row.created_at) : new Date();
+        return (
+          <div className="text-xs space-y-0.5">
+            <p className="font-bold text-slate-800 dark:text-slate-200">
+              {d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+            </p>
+            <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-semibold">
+              🕒 {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          </div>
+        );
+      },
+    },
+    {
+      header: t('reportPriorityScoreHeader'),
       accessor: (row) => (
         <div className="flex items-center space-x-2">
           <StatusBadge type="priority" value={row.severity || row.priority_level || 'MEDIUM'} size="sm" />
@@ -187,7 +205,7 @@ export default function AdminReportsPage() {
       ),
     },
     {
-      header: 'Status',
+      header: t('reportStatusHeader'),
       accessor: (row) => (
         <select
           value={row.status || 'Submitted'}
@@ -203,14 +221,14 @@ export default function AdminReportsPage() {
       ),
     },
     {
-      header: 'Actions',
+      header: t('reportActionsHeader'),
       accessor: (row) => (
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setAssignModalReport(row)}
             className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] transition-colors"
           >
-            Assign Driver
+            {t('actionAssignDriver')}
           </button>
           {(row.photo_url || row.image_url) && (
             <button
@@ -232,7 +250,7 @@ export default function AdminReportsPage() {
         <div>
           <div className="flex items-center space-x-3">
             <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Citizen Waste Reports Management
+              {t('adminReportsTitle')}
             </h1>
             {isRealtimeActive && (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">
@@ -241,7 +259,7 @@ export default function AdminReportsPage() {
             )}
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Review live incoming reports, inspect submitted photos, and dispatch collection drivers.
+            {t('adminReportsSub')}
           </p>
         </div>
 
@@ -251,7 +269,7 @@ export default function AdminReportsPage() {
           className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center space-x-1.5 w-fit"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh List</span>
+          <span>{t('actionRefresh')}</span>
         </button>
       </div>
 

@@ -47,12 +47,14 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
         const map = L.map(mapContainerRef.current, {
           center: [11.0003, 76.7725],
           zoom: 14,
-          scrollWheelZoom: false,
+          scrollWheelZoom: true,
+          maxZoom: 22,
         });
 
-        const streetTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-          maxZoom: 19,
+        const streetTile = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+          attribution: '&copy; Google Maps',
+          maxZoom: 22,
+          maxNativeZoom: 20,
         });
 
         streetTile.addTo(map);
@@ -84,16 +86,18 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
       }
 
       if (mode === 'satellite') {
-        const satTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, USDA, USGS',
-          maxZoom: 19,
+        const satTile = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+          attribution: '&copy; Google Maps',
+          maxZoom: 22,
+          maxNativeZoom: 20,
         });
         satTile.addTo(map);
         tileLayerRef.current = satTile;
       } else {
-        const streetTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap contributors',
-          maxZoom: 19,
+        const streetTile = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+          attribution: '&copy; Google Maps',
+          maxZoom: 22,
+          maxNativeZoom: 20,
         });
         streetTile.addTo(map);
         tileLayerRef.current = streetTile;
@@ -111,16 +115,30 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
 
       // Clear existing markers
       map.eachLayer((layer: any) => {
-        if (layer instanceof L.Marker || layer instanceof L.CircleMarker) {
+        if (layer instanceof L.Marker || layer instanceof L.CircleMarker || layer.options?.icon || (layer as any)._icon) {
           map.removeLayer(layer);
         }
       });
 
       const bounds = L.latLngBounds([]);
 
+      // Map to detect and offset overlapping markers at identical/very close coordinates
+      const coordCountMap = new Map<string, number>();
+      const getOffsetCoords = (lat: number, lng: number): [number, number] => {
+        const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+        const count = coordCountMap.get(key) || 0;
+        coordCountMap.set(key, count + 1);
+        if (count === 0) return [lat, lng];
+        const angle = count * 2.4;
+        const radius = 0.00015 * Math.sqrt(count);
+        return [lat + radius * Math.cos(angle), lng + radius * Math.sin(angle)];
+      };
+
       // 1. Render Collection Points with Priority-Colored Custom Markers
-      collectionPoints.forEach((cp) => {
+      collectionPoints.forEach((cp, idx) => {
         if (!cp.latitude || !cp.longitude) return;
+
+        const displayNum = idx + 1;
 
         const pRes = calculateSmartPriority({
           fill_percentage: cp.current_fill_percent,
@@ -167,20 +185,20 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
             }
             <div style="
               background-color: ${isOverdue ? '#dc2626' : colorHex};
-              width: ${isSurgePoint ? '34px' : '28px'};
-              height: ${isSurgePoint ? '34px' : '28px'};
+              width: ${isSurgePoint ? '36px' : '32px'};
+              height: ${isSurgePoint ? '36px' : '32px'};
               border-radius: 50%;
               border: 3px solid white;
-              box-shadow: ${isSurgePoint || isOverdue ? '0 0 15px #ef4444, 0 4px 10px rgba(0,0,0,0.5)' : '0 4px 10px rgba(0,0,0,0.3)'};
+              box-shadow: ${isSurgePoint || isOverdue ? '0 0 15px #ef4444, 0 4px 10px rgba(0,0,0,0.5)' : '0 4px 10px rgba(0,0,0,0.35)'};
               display: flex;
               align-items: center;
               justify-content: center;
               color: white;
               font-weight: 900;
-              font-size: ${isSurgePoint ? '12px' : '11px'};
-              font-family: monospace;
+              font-size: ${isSurgePoint ? '13px' : '12px'};
+              font-family: sans-serif;
             ">
-              ${cp.current_fill_percent || 0}
+              ${displayNum}
             </div>
           </div>
         `;
@@ -188,11 +206,12 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
         const customIcon = L.divIcon({
           html: iconHtml,
           className: isSurgePoint || isOverdue ? 'custom-bin-marker surge-pulsing-marker' : 'custom-bin-marker',
-          iconSize: isSurgePoint ? [34, 34] : [28, 28],
-          iconAnchor: isSurgePoint ? [17, 17] : [14, 14],
+          iconSize: isSurgePoint ? [36, 36] : [32, 32],
+          iconAnchor: isSurgePoint ? [18, 18] : [16, 16],
         });
 
-        const marker = L.marker([cp.latitude, cp.longitude], { icon: customIcon }).addTo(map);
+        const [cpLat, cpLng] = getOffsetCoords(cp.latitude, cp.longitude);
+        const marker = L.marker([cpLat, cpLng], { icon: customIcon }).addTo(map);
 
         const lastColText = cp.last_collected_at
           ? new Date(cp.last_collected_at).toLocaleString()
@@ -229,7 +248,7 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
         `;
 
         marker.bindPopup(popupHtml);
-        bounds.extend([cp.latitude, cp.longitude]);
+        bounds.extend([cpLat, cpLng]);
       });
 
       // 2. Citizen Waste Reports (Vibrant Pulsing Pin with High Z-Index)
@@ -283,7 +302,8 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
           iconAnchor: [15, 15],
         });
 
-        const marker = L.marker([rep.latitude, rep.longitude], { icon: customIcon, zIndexOffset: 1000 }).addTo(map);
+        const [rLat, rLng] = getOffsetCoords(rep.latitude, rep.longitude);
+        const marker = L.marker([rLat, rLng], { icon: customIcon, zIndexOffset: 1000 }).addTo(map);
 
         const photoUrl = rep.photo_url || rep.image_url;
 
@@ -316,7 +336,7 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
         `;
 
         marker.bindPopup(popupHtml);
-        bounds.extend([rep.latitude, rep.longitude]);
+        bounds.extend([rLat, rLng]);
       });
 
       // 3. Vehicles
@@ -348,7 +368,8 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
           iconAnchor: [13, 13],
         });
 
-        const marker = L.marker([veh.current_latitude, veh.current_longitude], { icon: customIcon }).addTo(map);
+        const [vLat, vLng] = getOffsetCoords(veh.current_latitude, veh.current_longitude);
+        const marker = L.marker([vLat, vLng], { icon: customIcon }).addTo(map);
 
         const popupHtml = `
           <div style="font-family: sans-serif; padding: 4px;">
@@ -362,7 +383,7 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
         `;
 
         marker.bindPopup(popupHtml);
-        bounds.extend([veh.current_latitude, veh.current_longitude]);
+        bounds.extend([vLat, vLng]);
       });
 
       if (bounds.isValid()) {
@@ -371,17 +392,19 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
     });
   }, [leafletLoaded, collectionPoints, wasteReports, vehicles]);
 
+  const [showLegendMobile, setShowLegendMobile] = useState(false);
+
   return (
-    <div className={`relative w-full ${isFullscreen ? 'fixed inset-0 z-50 h-screen rounded-none' : 'h-[400px] rounded-3xl'} overflow-hidden border border-slate-200 dark:border-slate-800 shadow-md bg-slate-100 dark:bg-slate-900 transition-all`}>
+    <div className={`relative w-full ${isFullscreen ? 'fixed inset-0 z-[9999] h-screen rounded-none isolate' : 'h-[400px] rounded-3xl z-10 isolate'} overflow-hidden border border-slate-200 dark:border-slate-800 shadow-md bg-slate-100 dark:bg-slate-900 transition-all`}>
       
       {/* Leaflet Map Container */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
       {/* Map Control Toolbar */}
-      <div className="absolute top-3 left-14 z-[400] flex items-center space-x-2 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-lg text-xs">
+      <div className="absolute top-3 left-12 sm:left-14 z-20 flex items-center space-x-1.5 sm:space-x-2 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-lg text-xs max-w-[calc(100%-60px)] sm:max-w-none overflow-x-auto no-scrollbar">
         <button
           onClick={() => toggleMapMode('street')}
-          className={`px-2.5 py-1 rounded-xl font-bold transition-colors ${
+          className={`px-2.5 py-1 rounded-xl font-bold transition-colors whitespace-nowrap ${
             mapMode === 'street'
               ? 'bg-emerald-600 text-white shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -391,7 +414,7 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
         </button>
         <button
           onClick={() => toggleMapMode('satellite')}
-          className={`px-2.5 py-1 rounded-xl font-bold transition-colors ${
+          className={`px-2.5 py-1 rounded-xl font-bold transition-colors whitespace-nowrap ${
             mapMode === 'satellite'
               ? 'bg-emerald-600 text-white shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -401,22 +424,22 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
         </button>
         <button
           onClick={() => setIsFullscreen(!isFullscreen)}
-          className="px-2 py-1 rounded-xl font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          className="px-2 py-1 rounded-xl font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap"
           title="Toggle Fullscreen Map"
         >
           {isFullscreen ? t('mapExitFullscreen') : t('mapFullscreen')}
         </button>
         <button
           onClick={() => setShowAboutMap(true)}
-          className="px-2 py-1 rounded-xl font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950 transition-colors"
+          className="px-2 py-1 rounded-xl font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950 transition-colors whitespace-nowrap"
           title="About Geography"
         >
           {t('mapAbout')}
         </button>
       </div>
 
-      {/* Map Legend */}
-      <div className="absolute top-3 right-3 z-[400] bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-lg text-[11px] space-y-1.5 font-sans">
+      {/* Map Legend — Desktop View */}
+      <div className="hidden md:block absolute top-3 right-3 z-20 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-lg text-[11px] space-y-1.5 font-sans">
         <div className="font-extrabold text-slate-900 dark:text-white text-xs mb-1 flex items-center justify-between gap-2">
           <span>{tLocation('Narasipuram / நரசீபுரம்')} {t('mapLegendKey')}</span>
           <span className="text-[9px] text-emerald-600 font-mono bg-emerald-50 dark:bg-emerald-950 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
@@ -424,19 +447,19 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
           </span>
         </div>
         <div className="flex items-center space-x-2">
-          <span className="w-3 h-3 rounded-full bg-red-500 inline-block border border-white" />
+          <span className="w-3 h-3 rounded-full bg-red-500 inline-block border border-white shrink-0" />
           <span className="font-semibold text-slate-700 dark:text-slate-300">{t('priorityCritical')} (76-100)</span>
         </div>
         <div className="flex items-center space-x-2">
-          <span className="w-3 h-3 rounded-full bg-amber-500 inline-block border border-white" />
+          <span className="w-3 h-3 rounded-full bg-amber-500 inline-block border border-white shrink-0" />
           <span className="font-semibold text-slate-700 dark:text-slate-300">{t('priorityHigh')} (56-75)</span>
         </div>
         <div className="flex items-center space-x-2">
-          <span className="w-3 h-3 rounded-full bg-blue-500 inline-block border border-white" />
+          <span className="w-3 h-3 rounded-full bg-blue-500 inline-block border border-white shrink-0" />
           <span className="font-semibold text-slate-700 dark:text-slate-300">{t('priorityMedium')} (31-55)</span>
         </div>
         <div className="flex items-center space-x-2">
-          <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block border border-white" />
+          <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block border border-white shrink-0" />
           <span className="font-semibold text-slate-700 dark:text-slate-300">{t('priorityLow')} (0-30)</span>
         </div>
         <div className="flex items-center space-x-2 pt-1 border-t border-slate-200 dark:border-slate-800">
@@ -447,6 +470,49 @@ export default function AdminMap({ collectionPoints, wasteReports, vehicles }: A
           <span className="text-xs">🚛</span>
           <span className="font-semibold text-slate-600 dark:text-slate-400">{t('mapLegendActiveVehicle')}</span>
         </div>
+      </div>
+
+      {/* Map Legend — Mobile View Collapsible */}
+      <div className="md:hidden absolute bottom-3 right-3 z-20 flex flex-col items-end">
+        {showLegendMobile && (
+          <div className="mb-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl text-[11px] space-y-1.5 font-sans animate-in fade-in max-w-[220px]">
+            <div className="font-extrabold text-slate-900 dark:text-white text-xs mb-1 border-b border-slate-200 dark:border-slate-800 pb-1">
+              {t('mapLegendKey')}
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="w-3 h-3 rounded-full bg-red-500 inline-block border border-white shrink-0" />
+              <span className="font-semibold text-slate-700 dark:text-slate-300">{t('priorityCritical')} (76-100)</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="w-3 h-3 rounded-full bg-amber-500 inline-block border border-white shrink-0" />
+              <span className="font-semibold text-slate-700 dark:text-slate-300">{t('priorityHigh')} (56-75)</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="w-3 h-3 rounded-full bg-blue-500 inline-block border border-white shrink-0" />
+              <span className="font-semibold text-slate-700 dark:text-slate-300">{t('priorityMedium')} (31-55)</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block border border-white shrink-0" />
+              <span className="font-semibold text-slate-700 dark:text-slate-300">{t('priorityLow')} (0-30)</span>
+            </div>
+            <div className="flex items-center space-x-2 pt-1 border-t border-slate-200 dark:border-slate-800">
+              <span className="text-xs">📍</span>
+              <span className="font-semibold text-slate-600 dark:text-slate-400">{t('mapLegendCitizenReport')}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs">🚛</span>
+              <span className="font-semibold text-slate-600 dark:text-slate-400">{t('mapLegendActiveVehicle')}</span>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => setShowLegendMobile(!showLegendMobile)}
+          className="px-3 py-1.5 rounded-xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 font-extrabold text-xs shadow-lg flex items-center space-x-1 active:scale-95"
+        >
+          <span>📍</span>
+          <span>{t('mapLegendKey')}</span>
+        </button>
       </div>
 
       {/* About Map Info Modal */}

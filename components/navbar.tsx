@@ -130,7 +130,7 @@ export default function Navbar() {
 
           {!loading && (
             user ? (
-              <div className="flex items-center space-x-2">
+              <div className="hidden lg:flex items-center space-x-2">
                 <div className="flex flex-col text-right hidden sm:block">
                   <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                     {profile?.full_name || user.email?.split('@')[0]}
@@ -148,7 +148,7 @@ export default function Navbar() {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center space-x-2">
+              <div className="hidden lg:flex items-center space-x-2">
                 <Link
                   href="/login"
                   className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition-colors shadow-sm"

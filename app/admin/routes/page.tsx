@@ -26,14 +26,7 @@ import {
   Send,
 } from 'lucide-react';
 
-const RouteMap = dynamic(() => import('@/components/route-map'), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-[400px] rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-xs text-slate-400 font-mono">
-      Loading OpenStreetMap Route Polylines...
-    </div>
-  ),
-});
+import RouteMap from '@/components/route-map';
 
 import { DemoSimulationBar } from '@/components/demo-simulation-bar';
 import { getDemoState, subscribeDemoStateChange, updateDemoStage } from '@/lib/demo-simulation-service';
@@ -46,7 +39,10 @@ const DEFAULT_POINTS: CollectionPoint[] = [
   { id: 'cp5', name: 'Velliangiri Foothills Bus Stop Bin', current_fill_percent: 48, current_weight_kg: 140, capacity: 800, latitude: 10.9912, longitude: 76.7645, status: 'active', created_at: new Date().toISOString() },
 ];
 
+import { useLanguage } from '@/lib/i18n/context';
+
 export default function AdminRoutesPage() {
+  const { t, tLocation } = useLanguage();
   const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>(DEFAULT_POINTS);
   const [wasteReports, setWasteReports] = useState<WasteReport[]>([]);
   const [activeRoute, setActiveRoute] = useState<SmartRouteResult | null>(null);
@@ -59,6 +55,7 @@ export default function AdminRoutesPage() {
   const [loadingStep, setLoadingStep] = useState<number>(0);
 
   // Form selections
+  const [selectedArea, setSelectedArea] = useState<string>('all');
   const [selectedVehicle, setSelectedVehicle] = useState<string>('v1');
   const [routeDate, setRouteDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
@@ -85,59 +82,38 @@ export default function AdminRoutesPage() {
 
   const fetchData = async () => {
     try {
-      const demoState = getDemoState();
-      const demoPointsAsCollectionPoints: CollectionPoint[] = demoState.points.map((dp) => ({
-        id: dp.id,
-        name: dp.name,
-        latitude: dp.latitude,
-        longitude: dp.longitude,
-        capacity: dp.capacity,
-        current_fill_percent: dp.current_fill_percent,
-        current_weight_kg: dp.current_weight_kg,
-        status: dp.status,
-        created_at: new Date().toISOString(),
-        is_demo: true,
-        ward: dp.ward,
-        sensitivity: dp.sensitivity,
-      } as any));
-
       let dbPoints: CollectionPoint[] = [];
       const { data: cpData } = await supabase.from('collection_points').select('*');
       if (cpData && cpData.length > 0) dbPoints = cpData as CollectionPoint[];
 
-      const combined = dbPoints.length > 0 ? [...dbPoints, ...demoPointsAsCollectionPoints] : [...DEFAULT_POINTS, ...demoPointsAsCollectionPoints];
-
       const mergedReports = await fetchMergedWasteReports();
       setWasteReports(mergedReports);
 
-      // Map active citizen reports into collection points for dynamic route generation
-      const existingCpNames = new Set(combined.map((p) => p.name.toLowerCase()));
-      const submittedReportPoints: CollectionPoint[] = mergedReports
-        .filter((r) => r.status === 'Submitted' || r.status === 'Under Review')
-        .map((r) => {
-          const fillPct = r.severity === 'CRITICAL' ? 95 : r.severity === 'HIGH' ? 88 : 75;
-          return {
-            id: `cp-rep-${r.id}`,
-            name: `${r.location_name} (${r.category})`,
-            latitude: r.latitude,
-            longitude: r.longitude,
-            capacity: 1000,
-            current_fill_percent: fillPct,
-            current_weight_kg: Math.round(fillPct * 4.5),
-            status: fillPct >= 85 ? 'overflowing' : 'active',
-            created_at: r.created_at,
-            is_demo: true,
-            ward: 'Citizen Reported Location',
-            sensitivity: 'residential',
-          } as CollectionPoint;
-        });
-
-      const newReportPointsToAppend = submittedReportPoints.filter(
-        (rp) => !existingCpNames.has(rp.name.toLowerCase())
-      );
-
-      const finalCollectionPoints = [...combined, ...newReportPointsToAppend];
+      const finalCollectionPoints = dbPoints.length > 0 ? dbPoints : DEFAULT_POINTS;
       setCollectionPoints(finalCollectionPoints);
+
+      // Auto-generate active route based on real-time database data
+      const driverMap: Record<string, { driver: string; veh: string; cap: number }> = {
+        v1: { driver: 'Ramesh Patel', veh: 'TN-37-EV-2024', cap: 2000 },
+        v2: { driver: 'Suresh K.', veh: 'TN-37-G-4050', cap: 3500 },
+        v3: { driver: 'Manjunath P.', veh: 'TN-37-M-3001', cap: 1200 },
+      };
+      const vehInfo = driverMap[selectedVehicle] || driverMap['v1'];
+
+      const result = await generateSmartCollectionRoute({
+        vehicle_lat: 11.0003,
+        vehicle_lng: 76.7725,
+        vehicle_capacity_kg: vehInfo.cap,
+        collectionPoints: finalCollectionPoints,
+        wasteReports: mergedReports,
+        route_date: routeDate,
+        driver_name: vehInfo.driver,
+        vehicle_number: vehInfo.veh,
+        selected_area_id: selectedArea,
+      });
+
+      setActiveRoute(result);
+      await saveRouteToSupabase(result);
     } catch (err) {
       console.error('Error fetching route data:', err);
     }
@@ -148,8 +124,8 @@ export default function AdminRoutesPage() {
     const unsubDemo = subscribeDemoStateChange(() => {
       fetchData();
     });
-    const unsubReports = subscribeReportsChange((updatedReports) => {
-      setWasteReports(updatedReports);
+    const unsubReports = subscribeReportsChange(() => {
+      fetchData();
     });
     return () => {
       unsubDemo();
@@ -185,6 +161,7 @@ export default function AdminRoutesPage() {
         route_date: routeDate,
         driver_name: vehInfo.driver,
         vehicle_number: vehInfo.veh,
+        selected_area_id: selectedArea,
       });
 
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -221,14 +198,14 @@ export default function AdminRoutesPage() {
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Smart Priority-Aware Collection Route
+              {t('routesTitle')}
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">
               Deterministic Routing
             </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 max-w-2xl">
-            Priority determines <strong>WHAT</strong> needs attention first • Proximity determines <strong>HOW</strong> to visit efficiently • Capacity determines <strong>HOW MUCH</strong> can be collected.
+            {t('routesSubtitle')}
           </p>
         </div>
 
@@ -237,7 +214,7 @@ export default function AdminRoutesPage() {
           className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-colors flex items-center space-x-2 w-fit shrink-0"
         >
           <Sparkles className="w-4 h-4 text-emerald-300" />
-          <span>Generate Smart Route</span>
+          <span>{t('btnGenerateSmartRoute')}</span>
         </button>
       </div>
 
@@ -254,25 +231,28 @@ export default function AdminRoutesPage() {
                   <Truck className="w-6 h-6" />
                 </div>
                 <div>
-                  <div className="flex items-center space-x-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-extrabold text-xl text-white tracking-tight">
                       {activeRoute.assigned_vehicle}
                     </h2>
                     <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                       {activeRoute.route_status}
                     </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                      Area: {tLocation(activeRoute.target_area_name || 'All Panchayat Areas')}
+                    </span>
                     {activeRoute.is_fallback ? (
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                        Demo Route — Geographic Distance Fallback
+                        {t('haversineFallbackPath')}
                       </span>
                     ) : (
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                        OSRM Road Route Geometry
+                        {t('osrmRoadPolyline')}
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Driver: <strong className="text-white">{activeRoute.assigned_driver}</strong> • Scheduled Date: <strong className="text-slate-300">{activeRoute.route_date}</strong> • Code: <code className="font-mono text-emerald-400">{activeRoute.route_code}</code>
+                    Driver: <strong className="text-white">{tLocation(activeRoute.assigned_driver)}</strong> • Scheduled Date: <strong className="text-slate-300">{activeRoute.route_date}</strong> • Code: <code className="font-mono text-emerald-400">{activeRoute.route_code}</code>
                   </p>
                 </div>
               </div>
@@ -285,10 +265,10 @@ export default function AdminRoutesPage() {
                   className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-colors flex items-center space-x-2 shrink-0 disabled:opacity-50"
                 >
                   <Send className="w-4 h-4 text-emerald-200" />
-                  <span>{isSendingRoute ? 'Dispatched to Driver...' : 'Send Route to Driver'}</span>
+                  <span>{isSendingRoute ? t('dispatchedToDriver') : t('btnSendRouteToDriver')}</span>
                 </button>
                 <div className="flex items-center space-x-2">
-                  <label className="text-xs text-slate-400 font-bold">Route Status:</label>
+                  <label className="text-xs text-slate-400 font-bold">{t('routeStatusLabel')}</label>
                   <select
                     value={activeRoute.route_status}
                     onChange={(e) => updateRouteStatus(e.target.value as any)}
@@ -313,24 +293,24 @@ export default function AdminRoutesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
               
               <div className="p-3.5 bg-slate-800/80 rounded-2xl border border-slate-700/80 space-y-1">
-                <span className="text-[10px] font-bold uppercase text-slate-400">Total Route Range</span>
+                <span className="text-[10px] font-bold uppercase text-slate-400">{t('totalRouteRange')}</span>
                 <p className="text-lg font-extrabold text-emerald-400">
-                  {activeRoute.total_stops} Stops • {activeRoute.total_distance_km} km
+                  {t('stopsCount', { count: activeRoute.total_stops })} • {activeRoute.total_distance_km} km
                 </p>
-                <p className="text-[11px] text-slate-400">Est. Duration: {activeRoute.estimated_duration_minutes} mins</p>
+                <p className="text-[11px] text-slate-400">{t('estDurationMins', { mins: activeRoute.estimated_duration_minutes })}</p>
               </div>
 
               <div className="p-3.5 bg-slate-800/80 rounded-2xl border border-slate-700/80 space-y-1">
-                <span className="text-[10px] font-bold uppercase text-slate-400">Waste Payload</span>
+                <span className="text-[10px] font-bold uppercase text-slate-400">{t('wastePayload')}</span>
                 <p className="text-lg font-extrabold text-amber-400">
                   {activeRoute.total_payload_kg} kg / {activeRoute.vehicle_capacity_kg} kg
                 </p>
-                <p className="text-[11px] text-slate-400">Remaining Capacity: {activeRoute.remaining_capacity_kg} kg</p>
+                <p className="text-[11px] text-slate-400">{t('remainingCapacityLabel', { weight: activeRoute.remaining_capacity_kg })}</p>
               </div>
 
               <div className="lg:col-span-2 p-3.5 bg-slate-800/80 rounded-2xl border border-slate-700/80 space-y-2">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="font-bold text-slate-300">Vehicle Capacity Utilization</span>
+                  <span className="font-bold text-slate-300">{t('capacityUtilization')}</span>
                   <span className="font-mono font-bold text-emerald-400">
                     {Math.round((activeRoute.total_payload_kg / activeRoute.vehicle_capacity_kg) * 100)}%
                   </span>
@@ -346,7 +326,7 @@ export default function AdminRoutesPage() {
                 {activeRoute.capacity_exceeded && (
                   <p className="text-[10px] text-rose-400 font-semibold flex items-center space-x-1">
                     <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
-                    <span>Capacity constraint relaxed for prototype route. Next low-priority overflow stops would be dispatched on secondary route.</span>
+                    <span>{t('capacityWarning')}</span>
                   </p>
                 )}
               </div>
@@ -363,10 +343,10 @@ export default function AdminRoutesPage() {
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-2">
                   <MapPin className="w-4 h-4 text-emerald-500" />
-                  <span>Sequential Driving Route Map</span>
+                  <span>{t('seqDrivingMap')}</span>
                 </h3>
                 <span className="text-[11px] text-slate-400 font-mono">
-                  {activeRoute.is_fallback ? 'Haversine Fallback Path' : 'OSRM Road Polyline'}
+                  {activeRoute.is_fallback ? t('haversineFallbackPath') : t('osrmRoadPolyline')}
                 </span>
               </div>
 
@@ -385,7 +365,7 @@ export default function AdminRoutesPage() {
               <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                 <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                   <Info className="w-4 h-4 text-emerald-600" />
-                  <span>Why This Route?</span>
+                  <span>{t('whyThisRouteTitle')}</span>
                 </h3>
 
                 <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
@@ -414,14 +394,14 @@ export default function AdminRoutesPage() {
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
               <div>
                 <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-                  Numbered Collection Stop Sequence Timeline
+                  {t('timelineTitle')}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Follow stop numbers in sequence from Vehicle Start Depot to Route Completion.
+                  {t('timelineSub')}
                 </p>
               </div>
               <span className="px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
-                {activeRoute.total_stops} Total Stops
+                {t('totalStopsBadge', { count: activeRoute.total_stops })}
               </span>
             </div>
 
@@ -435,14 +415,14 @@ export default function AdminRoutesPage() {
                 <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 flex-1 space-y-1">
                   <div className="flex items-center justify-between">
                     <h4 className="font-extrabold text-sm text-emerald-400">
-                      START — Planned Vehicle Start Depot
+                      {t('startDepotTitle')}
                     </h4>
                     <span className="text-[10px] font-mono bg-slate-800 px-2 py-0.5 rounded text-slate-300">
-                      08:30 AM Departure
+                      {t('departureTime')}
                     </span>
                   </div>
                   <p className="text-xs text-slate-300">
-                    Vehicle: {activeRoute.assigned_vehicle} • Driver: {activeRoute.assigned_driver} • Payload Capacity: {activeRoute.vehicle_capacity_kg} kg
+                    Vehicle: {activeRoute.assigned_vehicle} • Driver: {tLocation(activeRoute.assigned_driver)} • Payload Capacity: {activeRoute.vehicle_capacity_kg} kg
                   </p>
                 </div>
               </div>
@@ -462,14 +442,14 @@ export default function AdminRoutesPage() {
                       <div>
                         <div className="flex items-center space-x-2">
                           <span className="font-mono font-black text-xs text-emerald-600 dark:text-emerald-400">
-                            Stop #{stop.stop_number}
+                            {t('stopNumberHeader', { num: stop.stop_number })}
                           </span>
                           <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
-                            {stop.location_name}
+                            {tLocation(stop.location_name)}
                           </h4>
                         </div>
                         <p className="text-[11px] text-slate-400 mt-0.5 font-mono">
-                          Proximity: {stop.distance_from_prev_km} km from previous stop • Est. Arrival: {stop.estimated_arrival_time}
+                          {t('proximityLabel', { dist: stop.distance_from_prev_km, time: stop.estimated_arrival_time })}
                         </p>
                       </div>
 
@@ -485,14 +465,14 @@ export default function AdminRoutesPage() {
                       
                       {/* Left: Metrics */}
                       <div className="space-y-1 text-slate-600 dark:text-slate-300">
-                        <p><strong>Estimated Waste:</strong> <span className="font-bold text-slate-900 dark:text-white">{stop.estimated_weight_kg} kg</span></p>
-                        <p><strong>Collection Status:</strong> <span className="capitalize font-bold text-emerald-600">{stop.status}</span></p>
+                        <p><strong>{t('estimatedWasteLabel')}</strong> <span className="font-bold text-slate-900 dark:text-white">{stop.estimated_weight_kg} kg</span></p>
+                        <p><strong>{t('collectionStatusLabel')}</strong> <span className="capitalize font-bold text-emerald-600">{stop.status}</span></p>
                         <p className="text-slate-400 line-clamp-1"><em>{stop.explanation}</em></p>
                       </div>
 
                       {/* Right: Why This Stop Bullets */}
                       <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
-                        <p className="font-bold text-[11px] text-slate-900 dark:text-white">Why this stop?</p>
+                        <p className="font-bold text-[11px] text-slate-900 dark:text-white">{t('whyThisStopTitle')}</p>
                         <div className="space-y-0.5 text-[11px] text-slate-500">
                           {stop.why_this_stop.map((bullet, idx) => (
                             <p key={idx} className="flex items-center space-x-1.5">
@@ -517,7 +497,7 @@ export default function AdminRoutesPage() {
                 </div>
                 <div className="bg-emerald-950/60 text-emerald-200 p-4 rounded-2xl border border-emerald-800 flex-1 space-y-1">
                   <h4 className="font-extrabold text-sm text-white">
-                    END — Route Completed & Return to Processing Facility
+                    {t('endRouteTitle')}
                   </h4>
                   <p className="text-xs text-emerald-300">
                     Total Route Distance: {activeRoute.total_distance_km} km • Total Payload: {activeRoute.total_payload_kg} kg
@@ -596,6 +576,22 @@ export default function AdminRoutesPage() {
               <>
                 <div className="space-y-4 text-xs">
                   
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300">
+                      Select Target Collection Area / Ward Zone *
+                    </label>
+                    <select
+                      value={selectedArea}
+                      onChange={(e) => setSelectedArea(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-medium"
+                    >
+                      <option value="all">All Areas (Entire Panchayat Zone)</option>
+                      <option value="a1111111-1111-1111-1111-111111111111">Narasipuram Town Zone</option>
+                      <option value="a2222222-2222-2222-2222-222222222222">Vellaimalaipattinam &amp; Ikkaraibooluvampatti Zone</option>
+                      <option value="a3333333-3333-3333-3333-333333333333">Devarayapuram &amp; Thondamuthur Zone</option>
+                    </select>
+                  </div>
+
                   <div className="space-y-1.5">
                     <label className="block font-bold text-slate-700 dark:text-slate-300">
                       Select Dispatch Vehicle & Capacity *

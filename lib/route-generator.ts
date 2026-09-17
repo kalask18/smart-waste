@@ -33,6 +33,7 @@ export interface SmartRouteInput {
   driver_name?: string;
   vehicle_number?: string;
   forceFallback?: boolean;
+  selected_area_id?: string;
 }
 
 export interface SmartRouteResult {
@@ -55,12 +56,40 @@ export interface SmartRouteResult {
   route_explanation: string[];
   stops: GeneratedRouteStop[];
   created_at: string;
+  target_area_name?: string;
+}
+
+function matchesSelectedArea(
+  item: { area_id?: string; ward?: string; name?: string; location_name?: string },
+  targetAreaId?: string
+): boolean {
+  if (!targetAreaId || targetAreaId === 'all') return true;
+
+  // 1. Direct area_id match
+  if (item.area_id && item.area_id === targetAreaId) return true;
+
+  // 2. Matching by standard area ID prefixes or keywords
+  const locText = `${item.name || ''} ${item.location_name || ''} ${item.ward || ''}`.toLowerCase();
+
+  if (targetAreaId === 'a1111111-1111-1111-1111-111111111111') {
+    return locText.includes('narasipuram') || locText.includes('cp-01') || locText.includes('cp-02') || locText.includes('cp-10') || locText.includes('main road');
+  }
+
+  if (targetAreaId === 'a2222222-2222-2222-2222-222222222222') {
+    return locText.includes('vellaimalaipattinam') || locText.includes('ikkaraibooluvampatti') || locText.includes('thennamanallur') || locText.includes('alanthurai') || locText.includes('cp-03') || locText.includes('cp-04') || locText.includes('cp-05') || locText.includes('cp-06') || locText.includes('cp-07');
+  }
+
+  if (targetAreaId === 'a3333333-3333-3333-3333-333333333333') {
+    return locText.includes('devarayapuram') || locText.includes('thondamuthur') || locText.includes('pooluvapatti') || locText.includes('cp-08') || locText.includes('cp-09');
+  }
+
+  return true;
 }
 
 /**
  * Smart Priority-Aware Collection Route Generator:
  * Generates an ordered sequential collection route based on Priority Engine score ranking,
- * nearest-neighbour geographic distance selection, vehicle capacity limits, and OSRM road routing.
+ * nearest-neighbour geographic distance selection, vehicle capacity limits, area filtering, and OSRM road routing.
  */
 export async function generateSmartCollectionRoute(
   input: SmartRouteInput
@@ -70,6 +99,14 @@ export async function generateSmartCollectionRoute(
   const vehicleCapacityKg = input.vehicle_capacity_kg ?? 2000;
   const routeDate = input.route_date || new Date().toISOString().split('T')[0];
 
+  const AREA_NAMES: Record<string, string> = {
+    all: 'All Panchayat Areas',
+    'a1111111-1111-1111-1111-111111111111': 'Narasipuram Town Zone',
+    'a2222222-2222-2222-2222-222222222222': 'Vellaimalaipattinam & Ikkaraibooluvampatti Zone',
+    'a3333333-3333-3333-3333-333333333333': 'Devarayapuram & Thondamuthur Zone',
+  };
+  const targetAreaName = AREA_NAMES[input.selected_area_id || 'all'] || 'Selected Area Zone';
+
   // Strict Narasipuram, Coimbatore Geographic Bounding Box Filter
   // Ensures zero legacy Bangalore data or far-away coordinates enter route generation
   const isWithinNarasipuram = (lat?: number, lng?: number) => {
@@ -77,7 +114,7 @@ export async function generateSmartCollectionRoute(
     return lat >= 10.80 && lat <= 11.20 && lng >= 76.50 && lng <= 77.00;
   };
 
-  // 1. Gather all candidate collection points and reports strictly within Narasipuram zone
+  // 1. Gather all candidate collection points and reports strictly within Narasipuram zone & selected area
   const candidates: Array<{
     id: string;
     cp_id?: string;
@@ -97,13 +134,22 @@ export async function generateSmartCollectionRoute(
       const lat = cp.latitude || startLat;
       const lng = cp.longitude || startLng;
       if (!isWithinNarasipuram(lat, lng)) return;
+      if (!matchesSelectedArea(cp as any, input.selected_area_id)) return;
 
-      // Count matching citizen reports for this collection point
+      // Count matching active citizen reports for this collection point
       const matchingReports = (input.wasteReports || []).filter(
-        (r) =>
-          r.collection_point_id === cp.id ||
-          (r.location_name && r.location_name.toLowerCase().includes(cp.name.toLowerCase().split(' ')[0]))
+        (r) => {
+          const st = String(r.status || '').toLowerCase();
+          const isActive = st !== 'resolved' && st !== 'rejected' && st !== 'collected';
+          const matchesCp = r.collection_point_id === cp.id ||
+            (r.location_name && r.location_name.toLowerCase().includes(cp.name.toLowerCase().split(' ')[0]));
+          return isActive && matchesCp;
+        }
       );
+
+      const isHighFill = (cp.current_fill_percent ?? 0) >= 50 || cp.status === 'overflowing';
+      // Only include collection points that actually require service (high fill or active complaint)
+      if (!isHighFill && matchingReports.length === 0) return;
 
       const highestSev = matchingReports.some((r) => r.severity === 'CRITICAL')
         ? 'CRITICAL'
@@ -121,7 +167,7 @@ export async function generateSmartCollectionRoute(
         citizen_reported_severity: highestSev as any,
       });
 
-      const estWeight = cp.current_weight_kg || Math.round((cp.current_fill_percent / 100) * (cp.capacity || 1000));
+      const estWeight = cp.current_weight_kg || Math.round(((cp.current_fill_percent || 75) / 100) * (cp.capacity || 1000));
 
       candidates.push({
         id: `cp-${cp.id}`,
@@ -139,21 +185,50 @@ export async function generateSmartCollectionRoute(
   }
 
   if (input.wasteReports) {
+    const existingCpIds = new Set(candidates.map((c) => c.cp_id).filter(Boolean));
+
     input.wasteReports.forEach((rep) => {
+      const statusLower = (rep.status || 'submitted').toLowerCase();
+      if (statusLower === 'resolved' || statusLower === 'completed' || statusLower === 'cancelled') {
+        return;
+      }
+
+      if (rep.collection_point_id && existingCpIds.has(rep.collection_point_id)) {
+        return; // Handled under collection point candidate
+      }
+
       const lat = rep.latitude || startLat;
       const lng = rep.longitude || startLng;
       if (!isWithinNarasipuram(lat, lng)) return;
+      if (!matchesSelectedArea(rep as any, input.selected_area_id)) return;
 
-      const priorityResult = calculateSmartPriority({
-        fill_percentage: rep.severity === 'CRITICAL' ? 95 : rep.severity === 'HIGH' ? 80 : 55,
-        citizen_reported_severity: rep.severity,
-        location_sensitivity: rep.location_name || 'residential',
-        complaint_count: 2,
-      });
+      const scoreVal = rep.priority_score ?? (rep.severity === 'CRITICAL' ? 95 : rep.severity === 'HIGH' ? 80 : rep.severity === 'MEDIUM' ? 60 : 40);
+      const levelVal = (rep.severity || rep.priority_level || 'MEDIUM') as PriorityLevel;
+
+      const priorityResult: PriorityEngineResult = {
+        score: scoreVal,
+        level: levelVal,
+        explanation: `${levelVal} priority waste report at ${rep.location_name || 'Narasipuram Area'}.`,
+        factors: {
+          wasteLevelScore: scoreVal * 0.4,
+          timeElapsedScore: 15,
+          complaintScore: 20,
+          locationSensitivityScore: 15,
+          usedSensorData: false,
+          isStaleSensor: false,
+          hoursSinceLastCollection: 2,
+        },
+        weights: {
+          fillLevel: 0.40,
+          timeSinceCollection: 0.25,
+          complaints: 0.20,
+          locationSensitivity: 0.15,
+        },
+      };
 
       const estWeight = rep.severity === 'CRITICAL' ? 400 : rep.severity === 'HIGH' ? 250 : 150;
       const reportName = rep.location_name && rep.location_name !== 'Report Location'
-        ? `${rep.location_name} (Reported Incident)`
+        ? rep.location_name
         : 'Narasipuram Citizen Waste Report';
 
       candidates.push({
@@ -287,6 +362,11 @@ export async function generateSmartCollectionRoute(
     remainingCandidates.splice(bestIndex, 1);
   }
 
+  // Ensure stop_number is strictly sequential starting from 1 in final order
+  selectedStops.forEach((stop, idx) => {
+    stop.stop_number = idx + 1;
+  });
+
   // 3. OSRM Road Distance & Geometry Polyline Fetch (with Haversine fallback)
   const waypoints: Array<[number, number]> = [
     [startLat, startLng],
@@ -330,6 +410,7 @@ export async function generateSmartCollectionRoute(
     geometry_coordinates: osrmResult.geometryCoordinates,
     route_explanation: routeExplanation,
     stops: selectedStops,
+    target_area_name: targetAreaName,
     created_at: new Date().toISOString(),
   };
 }
@@ -339,12 +420,14 @@ export async function generateSmartCollectionRoute(
  */
 export async function saveRouteToSupabase(route: SmartRouteResult) {
   try {
+    const cleanVehicleNumber = (route.assigned_vehicle || 'TN-37-EV-2024').split(' ')[0];
+
     // 1. Save to localStorage for immediate sync across admin & worker interfaces
     if (typeof window !== 'undefined') {
       const driverData = {
         route_id: route.id || `rt-${Date.now()}`,
         route_code: route.route_code,
-        vehicle_number: route.assigned_vehicle,
+        vehicle_number: cleanVehicleNumber,
         vehicle_type: 'Electric Tipper E-Rickshaw',
         vehicle_capacity_kg: route.vehicle_capacity_kg,
         driver_name: route.assigned_driver || 'Ramesh Patel',
@@ -354,12 +437,16 @@ export async function saveRouteToSupabase(route: SmartRouteResult) {
         total_stops: route.total_stops,
         completed_stops: 0,
         remaining_stops: route.total_stops,
+        total_distance_km: route.total_distance_km,
+        estimated_duration_minutes: route.estimated_duration_minutes,
+        is_fallback: route.is_fallback,
+        geometry_coordinates: route.geometry_coordinates,
         stops: route.stops.map((s, idx) => ({
           id: s.id || `stop-${idx + 1}`,
           route_id: route.id || `rt-${Date.now()}`,
           collection_point_id: s.collection_point_id,
           report_id: s.report_id,
-          sequence_number: s.stop_number,
+          sequence_number: idx + 1,
           location_name: s.location_name,
           latitude: s.latitude,
           longitude: s.longitude,
@@ -371,6 +458,7 @@ export async function saveRouteToSupabase(route: SmartRouteResult) {
         })),
       };
       localStorage.setItem('smartwaste_saved_driver_route', JSON.stringify(driverData));
+      window.dispatchEvent(new CustomEvent('smartwaste_route_updated', { detail: driverData }));
     }
 
     // 2. Insert into Supabase tables
@@ -384,7 +472,7 @@ export async function saveRouteToSupabase(route: SmartRouteResult) {
         estimated_duration_minutes: route.estimated_duration_minutes,
         highest_priority_level: route.highest_priority_level,
         route_date: route.route_date,
-        vehicle_number: route.assigned_vehicle,
+        vehicle_number: cleanVehicleNumber,
         vehicle_capacity_kg: route.vehicle_capacity_kg,
         driver_name: route.assigned_driver,
         is_fallback: route.is_fallback,

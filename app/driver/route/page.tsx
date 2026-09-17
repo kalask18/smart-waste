@@ -38,14 +38,7 @@ import {
   Award
 } from 'lucide-react';
 
-const RouteMap = dynamic(() => import('@/components/route-map'), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-[380px] rounded-3xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-xs text-slate-400 font-mono">
-      Loading OpenStreetMap Route Navigation...
-    </div>
-  ),
-});
+import RouteMap from '@/components/route-map';
 
 import { useLanguage } from '@/lib/i18n/context';
 
@@ -99,14 +92,26 @@ export default function DriverRoutePage() {
       )
       .subscribe();
 
-    // Realtime subscription for operational notifications
+    // Realtime subscription for operational notifications & report updates
     const unsubNotifs = subscribeNotificationsChange(() => {
       loadData();
     });
 
+    const handleCustomRouteUpdate = () => {
+      loadData();
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('smartwaste_route_updated', handleCustomRouteUpdate);
+      window.addEventListener('smartwaste_reports_change', handleCustomRouteUpdate);
+    }
+
     return () => {
       supabase.removeChannel(routeChannel);
       unsubNotifs();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('smartwaste_route_updated', handleCustomRouteUpdate);
+        window.removeEventListener('smartwaste_reports_change', handleCustomRouteUpdate);
+      }
     };
   }, [user]);
 
@@ -266,18 +271,17 @@ export default function DriverRoutePage() {
             <Truck className="w-8 h-8" />
           </div>
           <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-wider">
-            NO ROUTE ASSIGNED
+            {t('driverNoRouteAssigned')}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            You currently have no collection route assigned for today.<br />
-            Please wait for the Admin to assign a route to your vehicle.
+            {t('driverNoRouteSub')}
           </p>
           <Link
             href="/driver"
             className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Return to Driver Dashboard</span>
+            <span>{t('driverReturnDashboard')}</span>
           </Link>
         </div>
       </div>
@@ -290,9 +294,10 @@ export default function DriverRoutePage() {
   const currentStopIndex = routeData.stops.findIndex((s) => s.status !== 'collected');
   const currentStop = currentStopIndex !== -1 ? routeData.stops[currentStopIndex] : routeData.stops[routeData.stops.length - 1];
 
-  const mapStops = routeData.stops.map((s) => ({
+  const mapStops = routeData.stops.map((s, idx) => ({
     id: s.id,
-    stop_number: s.sequence_number,
+    stop_number: idx + 1,
+    sequence_number: idx + 1,
     location_name: s.location_name,
     latitude: s.latitude,
     longitude: s.longitude,
@@ -313,13 +318,13 @@ export default function DriverRoutePage() {
             className="inline-flex items-center space-x-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline mb-1"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Dashboard</span>
+            <span>{t('driverReturnDashboard')}</span>
           </Link>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-            Today's Route Execution
+            {t('driverTodayRouteExecution')}
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Route Code: <strong className="text-slate-700 dark:text-slate-200">{routeData.route_code}</strong> • Vehicle: <strong className="text-slate-700 dark:text-slate-200">{routeData.vehicle_number}</strong> • Status: <strong className="text-emerald-600 dark:text-emerald-400 uppercase">{routeData.route_status}</strong>
+            {t('driverRouteCodeLabel')}: <strong className="text-slate-700 dark:text-slate-200">{routeData.route_code}</strong> • {t('driverVehicleLabel')}: <strong className="text-slate-700 dark:text-slate-200">{routeData.vehicle_number}</strong> • {t('driverStatusLabel')}: <strong className="text-emerald-600 dark:text-emerald-400 uppercase">{routeData.route_status}</strong>
           </p>
         </div>
 
@@ -328,7 +333,7 @@ export default function DriverRoutePage() {
           className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center space-x-1.5 w-fit"
         >
           <RefreshCw className="w-3.5 h-3.5" />
-          <span>Refresh Progress</span>
+          <span>{t('driverRefreshProgress')}</span>
         </button>
       </div>
 
@@ -359,16 +364,16 @@ export default function DriverRoutePage() {
             </div>
             <div>
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-slate-950 uppercase tracking-wider">
-                ⚠ OVERDUE STOP
+                ⚠ {t('driverOverdueStop')}
               </span>
               <h4 className="font-extrabold text-sm text-slate-900 dark:text-white mt-1">
-                Stop #{currentStop.sequence_number} — {currentStop.location_name}
+                Stop #{currentStop.sequence_number} — {tLocation(currentStop.location_name)}
               </h4>
               <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 font-medium">
-                Scheduled Time: <strong>5:00 PM</strong> • Status: <strong className="text-amber-600 dark:text-amber-400 uppercase">OVERDUE</strong>
+                {t('driverScheduledTime')}: <strong>5:00 PM</strong> • {t('driverStatusLabel')}: <strong className="text-amber-600 dark:text-amber-400 uppercase">{t('statusOverdue')}</strong>
               </p>
               <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold mt-1">
-                Please complete this collection as soon as possible. Priority elevated automatically.
+                {t('driverPleaseComplete')}
               </p>
             </div>
           </div>
@@ -380,7 +385,7 @@ export default function DriverRoutePage() {
             className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow-md shrink-0 flex items-center space-x-1.5 self-end sm:self-center"
           >
             <Camera className="w-4 h-4" />
-            <span>VIEW STOP &amp; VERIFY</span>
+            <span>{t('driverViewStopVerify')}</span>
           </button>
         </div>
       )}
@@ -392,11 +397,10 @@ export default function DriverRoutePage() {
             <Award className="w-8 h-8" />
           </div>
           <h2 className="text-2xl font-black tracking-tight text-white uppercase">
-            🎉 COLLECTION ROUTE COMPLETED
+            🎉 {t('driverRouteCompletedTitle')}
           </h2>
           <p className="text-xs text-slate-300 max-w-lg mx-auto">
-            All <strong>{routeData.total_stops} / {routeData.total_stops}</strong> assigned collection points have been serviced, verified, and reset to 0% fill level.<br />
-            Total Distance Covered: <strong>{routeData.total_distance_km} KM</strong> • Est. Duration: <strong>{routeData.estimated_duration_minutes} MINS</strong>.
+            {t('driverRouteCompletedDesc')}
           </p>
           <div className="pt-2">
             <Link
@@ -404,7 +408,7 @@ export default function DriverRoutePage() {
               className="px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg transition-all inline-flex items-center space-x-2"
             >
               <Check className="w-4 h-4" />
-              <span>Return to Driver Portal</span>
+              <span>{t('driverReturnDashboard')}</span>
             </Link>
           </div>
         </div>
@@ -415,7 +419,7 @@ export default function DriverRoutePage() {
           <div className="lg:col-span-1 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                ROUTE STOPS SEQUENCE ({routeData.completed_stops}/{routeData.total_stops} Done)
+                {t('driverRouteStopsSequence')} ({t('driverDoneCount', { done: routeData.completed_stops, total: routeData.total_stops })})
               </h3>
             </div>
 
@@ -445,14 +449,14 @@ export default function DriverRoutePage() {
                             ? 'bg-emerald-600 text-white'
                             : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
                         }`}>
-                          {isCompletedStop ? '✓' : stop.sequence_number}
+                          {isCompletedStop ? '✓' : (stop.sequence_number || index + 1)}
                         </span>
                         <div>
                           <h4 className="font-bold text-xs text-slate-900 dark:text-white line-clamp-1">
-                            {stop.location_name}
+                            {tLocation(stop.location_name)}
                           </h4>
                           <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                            Est. Waste: <strong>{stop.estimated_weight_kg} kg</strong>
+                            {t('driverEstWeight')}: <strong>{stop.estimated_weight_kg} kg</strong>
                           </p>
                         </div>
                       </div>
@@ -463,21 +467,21 @@ export default function DriverRoutePage() {
                       {isCompletedStop && (
                         <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center space-x-1">
                           <Check className="w-3.5 h-3.5" />
-                          <span>COMPLETED & VERIFIED</span>
+                          <span>{t('driverCompletedVerified')}</span>
                         </span>
                       )}
 
                       {isCurrentStop && (
                         <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center space-x-1">
                           <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
-                          <span>CURRENT STOP</span>
+                          <span>{t('driverCurrentStop')}</span>
                         </span>
                       )}
 
                       {isUpcomingLocked && (
                         <span className="text-[11px] font-bold text-slate-400 flex items-center space-x-1">
                           <Lock className="w-3.5 h-3.5" />
-                          <span>UPCOMING (LOCKED)</span>
+                          <span>{t('driverUpcomingLocked')}</span>
                         </span>
                       )}
                     </div>
@@ -512,12 +516,12 @@ export default function DriverRoutePage() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div className="flex items-center space-x-3">
                     <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-base shadow-md">
-                      #{currentStop.sequence_number}
+                      #{currentStop.sequence_number || 1}
                     </div>
                     <div>
                       <div className="flex items-center space-x-2">
                         <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
-                          CURRENT STOP
+                          {t('driverCurrentStop')}
                         </span>
                         <StatusBadge type="priority" value={currentStop.priority_level} size="sm" />
                       </div>
@@ -534,7 +538,7 @@ export default function DriverRoutePage() {
                     className="px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white font-bold text-xs flex items-center space-x-1.5 shadow-sm shrink-0"
                   >
                     <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>NAVIGATE / VIEW ON MAP</span>
+                    <span>{t('driverNavigateViewMap')}</span>
                   </a>
                 </div>
 
@@ -544,11 +548,11 @@ export default function DriverRoutePage() {
                     <strong className="text-slate-900 dark:text-white font-extrabold">{currentStop.priority_level} ({currentStop.priority_score})</strong>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Estimated Waste</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">{t('driverEstWeight')}</span>
                     <strong className="text-slate-900 dark:text-white font-extrabold">{currentStop.estimated_weight_kg} kg</strong>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Bin Fill Level</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">{t('driverBinFillLevel')}</span>
                     <strong className="text-emerald-600 dark:text-emerald-400 font-extrabold">{currentStop.fill_percentage}% Full</strong>
                   </div>
                 </div>
@@ -589,6 +593,7 @@ export default function DriverRoutePage() {
 
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-2 shadow-sm">
               <RouteMap
+                geometryCoordinates={routeData.geometry_coordinates}
                 stops={mapStops as any}
                 vehicleLat={11.0003}
                 vehicleLng={76.7725}
@@ -606,7 +611,7 @@ export default function DriverRoutePage() {
       {isStarted && !isCompleted && currentStop && (
         <div className="fixed bottom-3 left-3 right-3 z-40 lg:hidden p-3 rounded-2xl bg-slate-900/90 dark:bg-slate-950/95 backdrop-blur-md border border-slate-800 shadow-2xl space-y-2">
           <div className="flex items-center justify-between text-xs text-white">
-            <span className="font-bold truncate max-w-[200px]">Stop #{currentStop.sequence_number}: {currentStop.location_name}</span>
+            <span className="font-bold truncate max-w-[200px]">Stop #{currentStop.sequence_number}: {tLocation(currentStop.location_name)}</span>
             <span className="font-extrabold text-emerald-400">{currentStop.estimated_weight_kg} kg</span>
           </div>
           {currentStop.status === 'pending' && (
@@ -639,9 +644,9 @@ export default function DriverRoutePage() {
         </div>
       )}
 
-      {/* COLLECTION VERIFICATION MODAL */}
+      {/* COLLECTION VERIFICATION MODAL — High Z-Index to avoid map bleed through */}
       {showCollectModal && selectedStopToCollect && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full space-y-5 shadow-2xl">
             
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -651,9 +656,9 @@ export default function DriverRoutePage() {
                 </div>
                 <div>
                   <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
-                    VERIFY COLLECTION — Stop #{selectedStopToCollect.sequence_number}
+                    {t('driverVerifyCollectionModal')} — Stop #{selectedStopToCollect.sequence_number}
                   </h3>
-                  <p className="text-xs text-slate-500 truncate max-w-xs">{selectedStopToCollect.location_name}</p>
+                  <p className="text-xs text-slate-500 truncate max-w-xs">{tLocation(selectedStopToCollect.location_name)}</p>
                 </div>
               </div>
               <button
@@ -667,7 +672,7 @@ export default function DriverRoutePage() {
             {/* Geotagged Proof Camera */}
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Worker Geotagged Collection Proof
+                {t('driverWorkerGeotagProof')}
               </label>
               <GeotagCamera
                 roleLabel="WORKER COLLECTION PROOF"
@@ -683,7 +688,7 @@ export default function DriverRoutePage() {
             {/* Optional Notes */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Optional Incident Description / Notes
+                {t('driverOptionalNotes')}
               </label>
               <textarea
                 rows={2}
@@ -701,7 +706,7 @@ export default function DriverRoutePage() {
                 onClick={() => setShowCollectModal(false)}
                 className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs"
               >
-                Cancel
+                {t('actionCancel')}
               </button>
               <button
                 type="button"
@@ -710,7 +715,7 @@ export default function DriverRoutePage() {
                 className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs shadow-md flex items-center space-x-1.5"
               >
                 {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>VERIFY & COMPLETE STOP</span>
+                <span>{t('driverVerifyCompleteStop')}</span>
               </button>
             </div>
 

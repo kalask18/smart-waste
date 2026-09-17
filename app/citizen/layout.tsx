@@ -7,16 +7,19 @@ import AuthGuard from '@/components/auth-guard';
 import { AppShell } from '@/components/app-shell';
 import { LayoutDashboard, PlusCircle, AlertTriangle, FileText, Calendar, User } from 'lucide-react';
 
+import { useLanguage } from '@/lib/i18n/context';
+
 export default function CitizenLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const { t } = useLanguage();
 
   const navItems = [
-    { href: '/citizen', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/citizen/report', label: 'Report Waste', icon: PlusCircle },
-    { href: '/citizen/missed-collection', label: 'Missed Collection', icon: AlertTriangle },
-    { href: '/citizen/reports', label: 'My Reports', icon: FileText },
-    { href: '/citizen/schedule', label: 'Collection Schedule', icon: Calendar },
-    { href: '/citizen/profile', label: 'Profile', icon: User },
+    { href: '/citizen', label: t('navDashboard'), icon: LayoutDashboard },
+    { href: '/citizen/report', label: t('navReportWaste'), icon: PlusCircle },
+    { href: '/citizen/missed-collection', label: t('navMissedCollection'), icon: AlertTriangle },
+    { href: '/citizen/reports', label: t('navMyReports'), icon: FileText },
+    { href: '/citizen/schedule', label: t('navSchedule'), icon: Calendar },
+    { href: '/citizen/profile', label: t('navProfile'), icon: User },
   ];
 
   return (

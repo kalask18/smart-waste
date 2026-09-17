@@ -35,7 +35,8 @@ export function calculateHaversineDistance(
 
 /**
  * Fetches road routing geometry and distance from OSRM Public API.
- * Falls back to Haversine calculation if OSRM is unreachable or disabled.
+ * Tries secondary OpenStreetMap routing service if primary is unreachable.
+ * Falls back to smooth curved Haversine calculation if OSRM is unreachable.
  */
 export async function fetchOSRMRoute(
   waypoints: Array<[number, number]>, // Array of [lat, lng]
@@ -54,55 +55,86 @@ export async function fetchOSRMRoute(
     return calculateHaversineFallback(waypoints);
   }
 
-  try {
-    // OSRM format: lng,lat;lng,lat...
-    const formattedCoordinates = waypoints
-      .map(([lat, lng]) => `${lng},${lat}`)
-      .join(';');
+  const formattedCoordinates = waypoints
+    .map(([lat, lng]) => `${lng},${lat}`)
+    .join(';');
 
-    const url = `https://router.project-osrm.org/route/v1/driving/${formattedCoordinates}?overview=full&geometries=geojson`;
+  // Endpoint 1: Primary OSRM public server
+  const primaryUrl = `https://router.project-osrm.org/route/v1/driving/${formattedCoordinates}?overview=full&geometries=geojson`;
+  // Endpoint 2: Secondary OpenStreetMap DE routing server
+  const secondaryUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${formattedCoordinates}?overview=full&geometries=geojson`;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 sec timeout
+  const endpoints = [primaryUrl, secondaryUrl];
 
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
+  for (const url of endpoints) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 sec timeout per endpoint
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.routes && data.routes.length > 0) {
-        const route = data.routes[0];
-        const distanceKm = Math.round((route.distance / 1000) * 10) / 10;
-        const durationMins = Math.round(route.duration / 60);
-        // Convert OSRM GeoJSON [lng, lat] coordinates to Leaflet [lat, lng]
-        const geometryCoordinates: Array<[number, number]> = route.geometry.coordinates.map(
-          (coord: [number, number]) => [coord[1], coord[0]]
-        );
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
 
-        return {
-          totalDistanceKm: distanceKm,
-          estimatedDurationMins: durationMins,
-          geometryCoordinates,
-          isFallback: false,
-        };
+      if (res.ok) {
+        const data = await res.json();
+        if (data.routes && data.routes.length > 0) {
+          const route = data.routes[0];
+          const distanceKm = Math.round((route.distance / 1000) * 10) / 10;
+          const durationMins = Math.round(route.duration / 60);
+          // Convert OSRM GeoJSON [lng, lat] coordinates to Leaflet [lat, lng]
+          const geometryCoordinates: Array<[number, number]> = route.geometry.coordinates.map(
+            (coord: [number, number]) => [coord[1], coord[0]]
+          );
+
+          return {
+            totalDistanceKm: distanceKm,
+            estimatedDurationMins: durationMins,
+            geometryCoordinates,
+            isFallback: false,
+          };
+        }
       }
+    } catch (e) {
+      console.warn(`OSRM endpoint (${url}) unreachable, trying next:`, e);
     }
-  } catch (e) {
-    console.warn('OSRM service unavailable, using Haversine fallback:', e);
   }
 
   return calculateHaversineFallback(waypoints);
 }
 
 /**
- * Fallback route calculator using Haversine distance formula.
+ * Fallback route calculator using Haversine distance formula with smooth road curve interpolation.
  */
 function calculateHaversineFallback(waypoints: Array<[number, number]>): OSRMRouteResult {
   let totalDist = 0;
+  const smoothCoords: Array<[number, number]> = [];
+
   for (let i = 0; i < waypoints.length - 1; i++) {
     const [lat1, lng1] = waypoints[i];
     const [lat2, lng2] = waypoints[i + 1];
     totalDist += calculateHaversineDistance(lat1, lng1, lat2, lng2);
+
+    // Generate 8 intermediate points with subtle curvature simulating road curves
+    const steps = 8;
+    const dLat = lat2 - lat1;
+    const dLng = lng2 - lng1;
+
+    // Perpendicular vector for subtle road curvature
+    const perpLat = -dLng * 0.08;
+    const perpLng = dLat * 0.08;
+
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      // Quadratic curve offset
+      const curveFactor = 4 * t * (1 - t); // 0 at ends, 1 at midpoint
+      const intLat = lat1 + dLat * t + perpLat * curveFactor;
+      const intLng = lng1 + dLng * t + perpLng * curveFactor;
+      smoothCoords.push([intLat, intLng]);
+    }
+  }
+
+  // Push final endpoint
+  if (waypoints.length > 0) {
+    smoothCoords.push(waypoints[waypoints.length - 1]);
   }
 
   totalDist = Math.max(1.5, Math.round(totalDist * 10) / 10);
@@ -112,7 +144,7 @@ function calculateHaversineFallback(waypoints: Array<[number, number]>): OSRMRou
   return {
     totalDistanceKm: totalDist,
     estimatedDurationMins: durationMins,
-    geometryCoordinates: waypoints, // Straight line polyline segments
+    geometryCoordinates: smoothCoords.length > 0 ? smoothCoords : waypoints,
     isFallback: true,
   };
 }

@@ -65,3 +65,16 @@ h1, h2, h3, h4, h5, h6 {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(16, 185, 129, 0.45);
 }
+
+/* Prevent Leaflet Map Controls and Popups from bleeding through sticky navbar / top header */
+.leaflet-container {
+  z-index: 1 !important;
+  isolation: isolate;
+}
+.leaflet-pane {
+  z-index: 10 !important;
+}
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 20 !important;
+}

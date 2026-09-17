@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   Trash2, 
   LayoutDashboard, 
@@ -18,7 +18,9 @@ import {
   TrendingUp, 
   X,
   Layers,
-  ChevronRight
+  ChevronRight,
+  LogOut,
+  LogIn
 } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
 import { useLanguage } from '@/lib/i18n/context';
@@ -30,8 +32,15 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { role } = useAuth();
+  const router = useRouter();
+  const { user, profile, role, signOut, loading } = useAuth();
   const { t } = useLanguage();
+
+  const handleLogout = async () => {
+    if (onClose) onClose();
+    await signOut();
+    router.push('/login');
+  };
 
   // Determine active portal mode based on current URL path
   const currentRole = pathname.startsWith('/admin')
@@ -140,15 +149,56 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         </nav>
       </div>
 
-      {/* Sidebar Footer: System Status */}
-      <div className="p-4 m-3 rounded-2xl bg-emerald-900/20 border border-emerald-900/30 text-emerald-200/60 text-[11px] space-y-2">
-        <div className="flex items-center justify-between text-white font-bold">
-          <span>{t('appName')} V1.0</span>
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400" />
+      {/* Sidebar Footer: User Profile & LogOut + System Status */}
+      <div className="p-3 border-t border-emerald-900/40 space-y-3">
+        {!loading && (
+          user ? (
+            <div className="p-3.5 rounded-2xl bg-emerald-900/50 border border-emerald-800/60 space-y-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-500 text-slate-950 font-black text-sm flex items-center justify-center shadow-md border border-emerald-400/40 shrink-0">
+                  {(profile?.full_name || user.email || 'U').charAt(0).toUpperCase()}
+                </div>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="text-xs font-extrabold text-white truncate">
+                    {profile?.full_name || user.email?.split('@')[0]}
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-300/80 uppercase tracking-wider">
+                    {roleLabel}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleLogout}
+                className="w-full py-2.5 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 hover:text-white font-bold text-xs flex items-center justify-center space-x-2 transition-all active:scale-95 shadow-sm"
+              >
+                <LogOut className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{t('actionLogOut')}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="px-1">
+              <Link
+                href="/login"
+                onClick={onClose}
+                className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-md transition-all"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>{t('actionLogIn')}</span>
+              </Link>
+            </div>
+          )
+        )}
+
+        <div className="p-3.5 rounded-2xl bg-emerald-900/20 border border-emerald-900/30 text-emerald-200/60 text-[11px] space-y-1.5">
+          <div className="flex items-center justify-between text-white font-bold">
+            <span>{t('appName')} V1.0</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400" />
+          </div>
+          <p className="text-[10px] leading-tight text-emerald-300/50">
+            Eco-Tech Municipal Collection Engine for Smart Panchayats.
+          </p>
         </div>
-        <p className="text-[10px] leading-tight text-emerald-300/50">
-          Eco-Tech Municipal Collection Engine for Smart Panchayats.
-        </p>
       </div>
 
     </div>

@@ -79,7 +79,7 @@ export function DemoSimulationBar() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center space-x-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             onClick={handleSimulateSurge}
             disabled={isSurging}
