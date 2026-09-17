@@ -6,7 +6,7 @@ export interface WorkerAttendanceRecord {
   worker_name: string;
   vehicle_number: string;
   route_code: string;
-  attendance_status: 'PRESENT_VERIFIED' | 'ON_DUTY' | 'COMPLETED' | 'OFF_DUTY';
+  attendance_status: 'ABSENT' | 'PRESENT_VERIFIED' | 'ON_DUTY' | 'COMPLETED' | 'OFF_DUTY';
   clock_in_time: string;
   last_collection_time: string | null;
   verified_collections_count: number;
@@ -27,15 +27,15 @@ const INITIAL_ATTENDANCE_SEED: WorkerAttendanceRecord[] = [
     worker_name: 'Ramesh Patel',
     vehicle_number: 'TN-37-EV-2024',
     route_code: 'RT-ASSIGNED-01',
-    attendance_status: 'OFF_DUTY',
-    clock_in_time: new Date().toISOString(),
+    attendance_status: 'ABSENT',
+    clock_in_time: '',
     last_collection_time: null,
     verified_collections_count: 0,
-    total_assigned_stops: 4,
+    total_assigned_stops: 5,
     on_time_rating: 100,
     auto_updated: false,
     shift_date: new Date().toISOString().split('T')[0],
-    notes: 'Pending first collection verification to mark PRESENT.',
+    notes: 'Marked ABSENT — Awaiting worker collection verification.',
   },
   {
     id: 'att-102',
@@ -43,15 +43,15 @@ const INITIAL_ATTENDANCE_SEED: WorkerAttendanceRecord[] = [
     worker_name: 'S. Murugan',
     vehicle_number: 'TN-37-EV-2025',
     route_code: 'RT-DISPATCH-02',
-    attendance_status: 'OFF_DUTY',
-    clock_in_time: new Date().toISOString(),
+    attendance_status: 'ABSENT',
+    clock_in_time: '',
     last_collection_time: null,
     verified_collections_count: 0,
     total_assigned_stops: 5,
     on_time_rating: 95,
     auto_updated: false,
     shift_date: new Date().toISOString().split('T')[0],
-    notes: 'Off duty pending route start & geotag proof.',
+    notes: 'Marked ABSENT — Awaiting worker collection verification.',
   },
   {
     id: 'att-103',
@@ -59,15 +59,15 @@ const INITIAL_ATTENDANCE_SEED: WorkerAttendanceRecord[] = [
     worker_name: 'K. Selvam',
     vehicle_number: 'TN-37-EV-2026',
     route_code: 'RT-DISPATCH-03',
-    attendance_status: 'OFF_DUTY',
-    clock_in_time: new Date().toISOString(),
+    attendance_status: 'ABSENT',
+    clock_in_time: '',
     last_collection_time: null,
     verified_collections_count: 0,
     total_assigned_stops: 5,
     on_time_rating: 100,
     auto_updated: false,
     shift_date: new Date().toISOString().split('T')[0],
-    notes: 'Off duty pending collection verification.',
+    notes: 'Marked ABSENT — Awaiting worker collection verification.',
   },
 ];
 
@@ -102,6 +102,7 @@ export function getWorkerAttendanceList(): WorkerAttendanceRecord[] {
 export function saveWorkerAttendanceList(list: WorkerAttendanceRecord[]): void {
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY_ATTENDANCE, JSON.stringify(list));
+    window.dispatchEvent(new CustomEvent('smartwaste_attendance_updated', { detail: list }));
   }
 }
 
@@ -115,7 +116,7 @@ export interface RecordCollectionAttendanceParams {
 
 /**
  * AUTOMATICALLY updates worker attendance when worker confirms collection of waste.
- * Sets status to PRESENT_VERIFIED, updates clock-in time if missing, increments collections count.
+ * Transitions worker status from ABSENT to PRESENT_VERIFIED upon collection proof verification.
  */
 export async function recordWorkerCollectionAttendance(
   params: RecordCollectionAttendanceParams
@@ -150,7 +151,7 @@ export async function recordWorkerCollectionAttendance(
       verified_collections_count: existing.verified_collections_count + 1,
       auto_updated: true,
       latest_geotag_url: geotagUrl || existing.latest_geotag_url,
-      notes: `Attendance auto-updated upon waste collection confirmation at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
+      notes: `Attendance VERIFIED & auto-marked PRESENT upon geotagged collection proof at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
     };
     currentList[existingIdx] = targetRecord;
   } else {
@@ -164,12 +165,12 @@ export async function recordWorkerCollectionAttendance(
       clock_in_time: nowIso,
       last_collection_time: nowIso,
       verified_collections_count: 1,
-      total_assigned_stops: 4,
+      total_assigned_stops: 5,
       on_time_rating: 100,
       auto_updated: true,
       latest_geotag_url: geotagUrl,
       shift_date: nowIso.split('T')[0],
-      notes: `Attendance auto-marked PRESENT upon first waste collection confirmation.`,
+      notes: `Attendance VERIFIED & auto-marked PRESENT upon 1st geotagged collection proof.`,
     };
     currentList.push(targetRecord);
   }
@@ -201,7 +202,7 @@ export async function recordWorkerCollectionAttendance(
  */
 export function manualUpdateAttendanceStatus(
   workerId: string,
-  newStatus: 'PRESENT_VERIFIED' | 'ON_DUTY' | 'COMPLETED' | 'OFF_DUTY'
+  newStatus: 'ABSENT' | 'PRESENT_VERIFIED' | 'ON_DUTY' | 'COMPLETED' | 'OFF_DUTY'
 ): WorkerAttendanceRecord[] {
   const currentList = getWorkerAttendanceList();
   const updated = currentList.map((rec) => {
@@ -209,6 +210,7 @@ export function manualUpdateAttendanceStatus(
       return {
         ...rec,
         attendance_status: newStatus,
+        clock_in_time: newStatus === 'PRESENT_VERIFIED' ? (rec.clock_in_time || new Date().toISOString()) : rec.clock_in_time,
         notes: `Admin manually updated status to ${newStatus} at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
       };
     }

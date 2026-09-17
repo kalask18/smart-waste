@@ -137,7 +137,7 @@ export default function AdminDashboard() {
   const [collectionPoints, setCollectionPoints] = useState<CollectionPoint[]>(INITIAL_POINTS);
   const [wasteReports, setWasteReports] = useState<WasteReport[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [todayCompletedCount, setTodayCompletedCount] = useState<number>(4);
+  const [todayCompletedCount, setTodayCompletedCount] = useState<number>(0);
   const [verifications, setVerifications] = useState<VerificationEvidenceItem[]>([]);
   const [overdueTasks, setOverdueTasks] = useState<OverdueTaskItem[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>(getNotifications());
@@ -321,7 +321,7 @@ export default function AdminDashboard() {
         .gte('collected_at', todayStart.toISOString());
 
       const dbCompletedCount = colData ? colData.length : 0;
-      setTodayCompletedCount(Math.max(4 + localCompletedCount, dbCompletedCount + localCompletedCount));
+      setTodayCompletedCount(dbCompletedCount + localCompletedCount);
     } catch (err) {
       console.error('Error fetching admin dashboard data:', err);
     } finally {
@@ -354,6 +354,13 @@ export default function AdminDashboard() {
       setIsRealtimeActive(true);
     });
 
+    const handleAttendanceUpdate = () => {
+      setAttendanceList(getWorkerAttendanceList());
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('smartwaste_attendance_updated', handleAttendanceUpdate);
+    }
+
     const channelId = `admin_dash_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     const channel = supabase
       .channel(channelId)
@@ -374,6 +381,9 @@ export default function AdminDashboard() {
       unsubNotif();
       unsubReports();
       supabase.removeChannel(channel);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('smartwaste_attendance_updated', handleAttendanceUpdate);
+      }
     };
   }, []);
 
@@ -870,15 +880,14 @@ export default function AdminDashboard() {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
               {attendanceList.map((att) => {
-                const isRamesh = att.vehicle_number === 'TN-37-EV-2024';
-                const collectionsCount = isRamesh ? Math.max(att.verified_collections_count, todayCompletedCount) : att.verified_collections_count;
+                const collectionsCount = att.verified_collections_count;
                 const isPresent = att.attendance_status === 'PRESENT_VERIFIED' || collectionsCount > 0;
 
                 return (
                   <tr key={att.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                     <td className="py-3 px-3">
                       <div className="flex items-center space-x-2">
-                        <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-xs">
+                        <div className={`w-7 h-7 rounded-full text-white font-bold flex items-center justify-center text-xs ${isPresent ? 'bg-emerald-600' : 'bg-rose-600'}`}>
                           {att.worker_name.charAt(0)}
                         </div>
                         <div>
@@ -901,21 +910,21 @@ export default function AdminDashboard() {
                             <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                             PRESENT / VERIFIED
                           </span>
-                          <p className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold">⚡ Auto-updated via Collection</p>
+                          <p className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold">⚡ Auto-verified via Geotag Proof</p>
                         </div>
-                      ) : att.attendance_status === 'ON_DUTY' ? (
-                        <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-extrabold text-[10px] uppercase border border-blue-300 dark:border-blue-800">
-                          ON DUTY (SHIFT ACTIVE)
-                        </span>
                       ) : (
-                        <span className="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-extrabold text-[10px] uppercase border border-slate-200 dark:border-slate-700">
-                          OFF DUTY
-                        </span>
+                        <div className="space-y-0.5">
+                          <span className="px-2.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-extrabold text-[10px] uppercase inline-flex items-center gap-1 border border-rose-300 dark:border-rose-800">
+                            <X className="w-3 h-3 text-rose-500" />
+                            ABSENT (UNVERIFIED)
+                          </span>
+                          <p className="text-[9px] text-rose-600 dark:text-rose-400 font-semibold">⚠ Awaiting 1st geotagged collection proof</p>
+                        </div>
                       )}
                     </td>
 
                     <td className="py-3 px-3 font-mono text-slate-600 dark:text-slate-300 text-[11px]">
-                      {new Date(att.clock_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} Today
+                      {att.clock_in_time ? `${new Date(att.clock_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} Today` : 'Pending Verification'}
                     </td>
 
                     <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">
@@ -923,10 +932,17 @@ export default function AdminDashboard() {
                     </td>
 
                     <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] border border-emerald-200 dark:border-emerald-800 flex items-center space-x-1 w-fit">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                        <span>{collectionsCount} Geotags Burned</span>
-                      </span>
+                      {collectionsCount > 0 ? (
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] border border-emerald-200 dark:border-emerald-800 flex items-center space-x-1 w-fit">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                          <span>{collectionsCount} Geotags Burned</span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 font-bold text-[10px] border border-amber-200 dark:border-amber-800 flex items-center space-x-1 w-fit">
+                          <AlertTriangle className="w-3 h-3 text-amber-500" />
+                          <span>0 Geotags (Unverified)</span>
+                        </span>
+                      )}
                     </td>
 
                     {/* Dedicated Attendance Action Button */}
@@ -1086,17 +1102,26 @@ export default function AdminDashboard() {
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-500 uppercase">Attendance System Status</span>
-                <span className="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-black text-xs border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                  PRESENT / VERIFIED
-                </span>
+                {selectedAttendanceModal.attendance_status === 'PRESENT_VERIFIED' || selectedAttendanceModal.verified_collections_count > 0 ? (
+                  <span className="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-black text-xs border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    PRESENT / VERIFIED
+                  </span>
+                ) : (
+                  <span className="px-3 py-1 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-black text-xs border border-rose-300 dark:border-rose-800 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                    ABSENT (UNVERIFIED)
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-1 text-xs">
                 <div>
                   <span className="text-[10px] text-slate-400 font-bold block">CLOCK-IN PUNCH TIME</span>
                   <span className="font-mono font-bold text-slate-900 dark:text-white">
-                    {new Date(selectedAttendanceModal.clock_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    {selectedAttendanceModal.clock_in_time
+                      ? new Date(selectedAttendanceModal.clock_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                      : 'Pending Verification'}
                   </span>
                 </div>
 
@@ -1135,13 +1160,14 @@ export default function AdminDashboard() {
 
                 <button
                   onClick={() => {
-                    const updated = manualUpdateAttendanceStatus(selectedAttendanceModal.worker_id, 'OFF_DUTY');
+                    const updated = manualUpdateAttendanceStatus(selectedAttendanceModal.worker_id, 'ABSENT');
                     setAttendanceList(updated);
                     setSelectedAttendanceModal(null);
                   }}
-                  className="px-3.5 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-rose-600 hover:text-white font-bold text-xs transition-colors"
+                  className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md flex items-center space-x-1"
                 >
-                  Mark Off Duty
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>Mark ABSENT</span>
                 </button>
               </div>
             </div>

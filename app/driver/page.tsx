@@ -9,6 +9,7 @@ import {
   DriverRouteData, 
   DriverStopItem 
 } from '@/lib/worker-service';
+import { getWorkerAttendanceList } from '@/lib/attendance-service';
 import { StatCard } from '@/components/ui/stat-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { 
@@ -127,6 +128,11 @@ export default function DriverDashboard() {
   const isCompleted = routeData.route_status === 'COMPLETED' || routeData.route_status === 'completed';
   const currentStopIndex = routeData.stops.findIndex((s) => s.status !== 'collected');
 
+  const workerAtt = getWorkerAttendanceList().find(
+    (a) => a.worker_id === user?.id || a.vehicle_number === routeData.vehicle_number
+  );
+  const isAttendanceVerified = workerAtt?.attendance_status === 'PRESENT_VERIFIED' || (workerAtt?.verified_collections_count || 0) > 0;
+
   return (
     <div className="space-y-6">
       
@@ -155,6 +161,35 @@ export default function DriverDashboard() {
           <span>{t('syncRoute')}</span>
         </button>
       </div>
+
+      {/* Attendance Verification Status Banner */}
+      {isAttendanceVerified ? (
+        <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center space-x-2.5">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div>
+              <span className="font-extrabold text-white block">Attendance Verification: 🟢 PRESENT / VERIFIED</span>
+              <span className="text-[11px] text-emerald-300/80">Geotagged collection proof verified &amp; auto-submitted to Admin Control Room.</span>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px] uppercase border border-emerald-500/40 shrink-0">
+            {workerAtt?.verified_collections_count || 1} Proofs Verified
+          </span>
+        </div>
+      ) : (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center space-x-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 animate-pulse" />
+            <div>
+              <span className="font-extrabold text-white block">Attendance Verification: 🔴 ABSENT (UNVERIFIED)</span>
+              <span className="text-[11px] text-rose-300/80">Complete your 1st geotagged collection stop &amp; upload photo proof to verify attendance with Admin.</span>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 font-bold text-[10px] uppercase border border-rose-500/40 shrink-0">
+            Awaiting 1st Collection
+          </span>
+        </div>
+      )}
 
       {/* TODAY'S COLLECTION ROUTE MAIN CARD */}
       <div className="rounded-3xl bg-gradient-to-br from-emerald-950 via-slate-900 to-teal-950 text-white p-6 shadow-xl border border-emerald-900/50 space-y-4">
